@@ -69,24 +69,15 @@ function resolveLiveBootChineseSnapshot() {
 try { resolveLiveBootChineseSnapshot(); } catch {}
 
 function buildLiveRuntimeModulesMeta(cfg) {
-  const diskProxy = cfg?.modules?.proxy || {};
-  const diskEnabled = Boolean(diskProxy.enabled);
-  const diskUrl = normalizeProxyUrl(diskProxy.proxyUrl || '');
-  const diskBypass = normalizeBypassListForCompare(diskProxy.bypassList || '');
-  const runtimeEnabled = Boolean(liveBootProxySnapshot.enabled);
-  const runtimeUrl = normalizeProxyUrl(liveBootProxySnapshot.proxyUrl || '');
-  const runtimeBypass = normalizeBypassListForCompare(liveBootProxySnapshot.bypassList || '');
-  const proxyNeedsRestart = runtimeEnabled !== diskEnabled ||
-    (diskEnabled && runtimeEnabled && (diskUrl !== runtimeUrl || diskBypass !== runtimeBypass));
   const bootZh = resolveLiveBootChineseSnapshot();
   const diskCh = cfg?.modules?.chinese || {};
   const diskZhActive = Boolean(diskCh.enabled && String(diskCh.language || '').toLowerCase() !== 'en');
   return {
-    injectedAtStartup: Boolean(liveBootProxySnapshot.injectedAtStartup),
-    proxyActive: runtimeEnabled,
-    runtimeProxyUrl: runtimeUrl || null,
-    runtimeBypassList: typeof liveBootProxySnapshot.bypassList === 'string' ? liveBootProxySnapshot.bypassList : null,
-    proxyNeedsRestart,
+    injectedAtStartup: false,
+    proxyActive: false,
+    runtimeProxyUrl: null,
+    runtimeBypassList: null,
+    proxyNeedsRestart: false,
     chineseActive: Boolean(bootZh.enabled),
     chineseBootLanguage: bootZh.language,
     chineseNeedsRestart: diskZhActive !== Boolean(bootZh.enabled)
@@ -316,6 +307,11 @@ function createLiveRequestHandler({ api, secret, getAllowedOrigins = null, onShu
           const { loadModulesConfig, saveModulesConfig, inspectDiskModules, normalizeBrandTitle, normalizeClientLanguage } = require('./modules-config');
           const cfg = loadModulesConfig();
           const mod = request?.name;
+          if (mod === 'proxy') {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, status: 'removed', error: '免 TUN 网络直连功能已移除', restartRequired: false }));
+            return;
+          }
           if (!cfg.modules[mod]) {
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ ok: false, error: `未知模块: ${mod}` }));

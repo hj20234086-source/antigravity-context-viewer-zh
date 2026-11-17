@@ -17,7 +17,6 @@ const { loadModulesConfig, saveModulesConfig, acquireFileLock } = require('./mod
 const {
   TAGS,
   validateSyntax,
-  generateProxyUtilsCode,
   generateMeterUtilsCode,
   generateMeterPreloadCode,
   generateChinesePreloadCode,
@@ -505,7 +504,9 @@ async function install(options = {}) {
           modulesConfig.modules.chinese.language = options.modules.chinese.enabled ? 'zh-CN' : 'en';
         }
       }
-      if (options.modules.proxy) Object.assign(modulesConfig.modules.proxy, options.modules.proxy);
+    }
+    if (modulesConfig.modules.proxy && typeof modulesConfig.modules.proxy === 'object') {
+      modulesConfig.modules.proxy.enabled = false;
     }
     if (process.argv.includes('--enable-chinese')) {
       modulesConfig.modules.chinese.enabled = true;
@@ -514,12 +515,6 @@ async function install(options = {}) {
     if (process.argv.includes('--disable-chinese')) {
       modulesConfig.modules.chinese.enabled = false;
       modulesConfig.modules.chinese.language = 'en';
-    }
-    if (process.argv.includes('--enable-proxy')) modulesConfig.modules.proxy.enabled = true;
-    if (process.argv.includes('--disable-proxy')) modulesConfig.modules.proxy.enabled = false;
-    const proxyUrlIdx = process.argv.indexOf('--proxy-url');
-    if (proxyUrlIdx >= 0 && process.argv[proxyUrlIdx + 1]) {
-      modulesConfig.modules.proxy.proxyUrl = process.argv[proxyUrlIdx + 1];
     }
     saveModulesConfig(modulesConfig);
 
@@ -577,16 +572,8 @@ async function install(options = {}) {
       let finalUtils = cleanUtils;
       let finalPreload = cleanPreload;
 
-      // 6. 模块组装注入（使用成对标记与运行时配置门禁，默认完整注入三模块能力，通过 modules.json 精确控制开关）
-      // 若用户或测试显式传入 pureMeterOnly: true 或 --pure-meter-only，则仅注入上下文监控
+      // 6. 模块组装注入（使用成对标记与运行时配置门禁；旧版本遗留的 ProxyNoTun 块已在 cleanUtilsSource 中自动剥离）
       const isPureMeterOnly = Boolean(options.pureMeterOnly || process.argv.includes('--pure-meter-only'));
-
-      // 模块 A: Proxy NoTun (免 TUN 代理组件注入)
-      const shouldInjectProxy = !isPureMeterOnly && (modulesConfig.modules.proxy.enabled || options.injectProxy !== false);
-      if (shouldInjectProxy) {
-        const proxyCode = generateProxyUtilsCode(modulesConfig.modules.proxy);
-        finalUtils = proxyCode + '\n' + finalUtils;
-      }
 
       // 模块 B: Context Meter (上下文与 Token 监控)
       if (modulesConfig.modules.meter.enabled) {

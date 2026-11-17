@@ -487,16 +487,20 @@
     host.setAttribute('data-theme', activeTheme);
     const hostBg = getHostZeroLevelBg(activeTheme === 'light');
     host.style.setProperty('--ag-host-bg', hostBg);
-    const btns = [el('theme-toggle'), el('theme-toggle-tokens')].filter(Boolean);
+    const btns = [el('theme-toggle'), el('theme-toggle-tokens'), el('theme-toggle-quota')].filter(Boolean);
+    const autoSvg = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg>';
+    const sunSvg = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1"/></svg>';
+    const moonSvg = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.8A5.5 5.5 0 0 1 6.2 2.8a5.5 5.5 0 1 0 7 7z"/></svg>';
     btns.forEach(btn => {
+      btn.setAttribute?.('data-theme-mode', currentThemeMode);
       if (currentThemeMode === 'auto') {
-        btn.textContent = activeTheme === 'light' ? '🌗' : '🌓';
+        btn.innerHTML = autoSvg;
         btn.title = t('theme.autoTitle', { mode: activeTheme === 'light' ? t('theme.light') : t('theme.dark') });
       } else if (currentThemeMode === 'light') {
-        btn.textContent = '☀️';
+        btn.innerHTML = sunSvg;
         btn.title = t('theme.lightTitle');
       } else {
-        btn.textContent = '🌙';
+        btn.innerHTML = moonSvg;
         btn.title = t('theme.darkTitle');
       }
     });

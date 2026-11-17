@@ -1664,46 +1664,38 @@ test('三模块组合验证 10：单模块、双模块、三模块按需开启�
 
     assert.ok(u1.includes(TAGS.METER_UTILS_START), '上下文模块 utils 成对标记必须存在');
     assert.ok(p1.includes(TAGS.METER_PRELOAD_START), '上下文模块 preload 成对标记必须存在');
-    assert.equal(u1.includes(TAGS.PROXY_START), false, '纯净上下文模式下免 TUN 绝不能有标记');
+    assert.equal(u1.includes(TAGS.PROXY_START), false, '免 TUN 已移除，utils 绝不可注入代理标记');
     assert.equal(p1.includes(TAGS.CHINESE_START), false, '纯净上下文模式下汉化绝不能有标记');
     assert.ok(validateSyntax(u1, 'dist/utils.js'));
     assert.ok(validateSyntax(p1, 'dist/preload.js'));
 
-    // 2. 独立增量启用免 TUN 代理模块
-    await install({ path: targetAsar, injectChinese: false, modules: { proxy: { enabled: true, proxyUrl: 'http://127.0.0.1:9999' } } });
+    // 2. 即使显式传入 legacy proxy 配置，install 也绝不向 ASAR 注入免 TUN 代码，且自动剥离旧遗留标记
+    await install({ path: targetAsar, modules: { chinese: { enabled: false }, proxy: { enabled: true, proxyUrl: 'http://127.0.0.1:9999' } } });
     let u2 = builtinAsar.extractFile(targetAsar, 'dist/utils.js').toString('utf8');
-    assert.ok(u2.includes(TAGS.PROXY_START), '免 TUN 代理成对标记必须成功注入');
-    assert.ok(u2.includes('127.0.0.1:9999'), '自定义代理地址必须准确写入');
+    assert.equal(u2.includes(TAGS.PROXY_START), false, '即使传入 legacy proxy 参数也绝不注入免 TUN 代码');
     assert.ok(u2.includes(TAGS.METER_UTILS_START), '原上下文模块必须完好保留');
     assert.ok(validateSyntax(u2, 'dist/utils.js'));
 
-    // 3. 独立增量启用汉化模块（三模块同时启用）
+    // 3. 独立增量启用汉化模块
     await install({ path: targetAsar, modules: { chinese: { enabled: true } } });
     let u3 = builtinAsar.extractFile(targetAsar, 'dist/utils.js').toString('utf8');
     let p3 = builtinAsar.extractFile(targetAsar, 'dist/preload.js').toString('utf8');
-    assert.ok(u3.includes(TAGS.PROXY_START), '三模块共存时免 TUN 仍存在');
-    assert.ok(u3.includes(TAGS.METER_UTILS_START), '三模块共存时上下文仍存在');
-    assert.ok(p3.includes(TAGS.CHINESE_START), '三模块共存时汉化标记必须成功注入');
+    assert.equal(u3.includes(TAGS.PROXY_START), false);
+    assert.ok(u3.includes(TAGS.METER_UTILS_START), '上下文模块仍存在');
+    assert.ok(p3.includes(TAGS.CHINESE_START), '汉化标记必须成功注入');
     assert.ok(validateSyntax(u3, 'dist/utils.js'));
     assert.ok(validateSyntax(p3, 'dist/preload.js'));
 
-    // 4. 独立关闭免 TUN 模块并原位清洗标记
-    await install({ path: targetAsar, injectProxy: false, modules: { proxy: { enabled: false } } });
+    // 4. 独立关闭汉化模块并原位清洗标记
+    await install({ path: targetAsar, injectChinese: false, modules: { chinese: { enabled: false } } });
     let u4 = builtinAsar.extractFile(targetAsar, 'dist/utils.js').toString('utf8');
     let p4 = builtinAsar.extractFile(targetAsar, 'dist/preload.js').toString('utf8');
-    assert.equal(u4.includes(TAGS.PROXY_START), false, '免 TUN 模块清洗后，其标记与代码必须被干净移除');
-    assert.ok(u4.includes(TAGS.METER_UTILS_START), '关闭免 TUN 模块时，上下文模块必须完好保留');
-    assert.ok(p4.includes(TAGS.CHINESE_START), '关闭免 TUN 模块时，汉化模块必须完好保留');
-    assert.ok(validateSyntax(u4, 'dist/utils.js'));
+    assert.equal(p4.includes(TAGS.CHINESE_START), false, '汉化模块清洗后，其标记与代码必须被干净移除');
+    assert.ok(u4.includes(TAGS.METER_UTILS_START), '关闭汉化模块时，上下文模块必须完好保留');
+    assert.ok(p4.includes(TAGS.METER_PRELOAD_START), '关闭汉化模块时，上下文模块必须完好保留');
+    assert.ok(validateSyntax(p4, 'dist/preload.js'));
 
-    // 5. 独立关闭汉化模块并原位清洗标记
-    await install({ path: targetAsar, injectProxy: false, injectChinese: false, modules: { chinese: { enabled: false } } });
-    let p5 = builtinAsar.extractFile(targetAsar, 'dist/preload.js').toString('utf8');
-    assert.equal(p5.includes(TAGS.CHINESE_START), false, '汉化模块清洗后，其标记与代码必须被干净移除');
-    assert.ok(p5.includes(TAGS.METER_PRELOAD_START), '关闭汉化模块时，上下文模块必须完好保留');
-    assert.ok(validateSyntax(p5, 'dist/preload.js'));
-
-    // 6. 代理健康分层检测断言
+    // 5. 代理健康分层检测断言（仅供内部更新器检测）
     const invalidRes = await testProxyHealth('not_a_valid_url');
     assert.equal(invalidRes.configValid, false);
     assert.match(invalidRes.error, /格式错误/);
@@ -1973,15 +1965,14 @@ test('专项复核 14：隔离集成测试：状态机三分模型、目标定�
     assert.equal(noGateDisk.chineseReady, false);
     assert.equal(noGateDisk.chineseStatus, 'missing_gate', '缺少门禁必须判定为 missing_gate');
 
-    // 8. 免 TUN 代理模块失败防护测试
-    // 若代理原本未注入，客户端内尝试开启必须报错并拒绝修改配置为 true
+    // 8. 免 TUN 模块已移除防护测试：handleToggleModule('proxy') 明确拒绝且不改写配置为 true
     const cleanHostForProxy = await createMockHostAsar(tmpDir, '2.31.2');
     const resProxyFail = await handleToggleModule(fakeEvent, 'proxy', true, { asarPath: cleanHostForProxy });
     assert.equal(resProxyFail.ok, false);
-    assert.equal(resProxyFail.status, 'install_failed');
-    assert.match(resProxyFail.error, /未注入/);
+    assert.equal(resProxyFail.status, 'removed');
+    assert.match(resProxyFail.error, /已移除/);
     const cfgProxyFail = loadModulesConfig();
-    assert.equal(cfgProxyFail.modules.proxy.enabled, false, '代理未就绪配置严禁被改成 true');
+    assert.equal(cfgProxyFail.modules.proxy.enabled, false, '免 TUN 配置严禁被改成 true');
   } finally {
     if (prevStateDir !== undefined) process.env.AG_METER_STATE_DIR = prevStateDir;
     else delete process.env.AG_METER_STATE_DIR;
@@ -2016,7 +2007,7 @@ test('专项复核 15：真实 Electron/ASAR 模块加载环境验证：运行�
     assert.equal(process.noAsar, beforeNodeNoAsar, 'Node 环境下 inspectDiskModules 不得篡改 process.noAsar');
     assert.equal(diskFromNode.found, true);
     assert.equal(diskFromNode.chinese, true);
-    assert.equal(diskFromNode.proxy, true);
+    assert.equal(diskFromNode.proxy, false);
 
     // 3. 真实 Electron/ASAR 模块加载环境复现验证
     // 探测本机 Antigravity 或 Electron 可执行文件
@@ -2053,13 +2044,12 @@ assert.equal(disk.meter, true);
 assert.equal(disk.meterReady, true, 'Electron ASAR 内运行不得误报 disk.meterReady = false');
 assert.equal(disk.chinese, true);
 assert.equal(disk.chineseReady, true);
-assert.equal(disk.proxy, true);
-assert.equal(disk.proxyReady, true);
+assert.equal(disk.proxy, false);
 assert.equal(process.noAsar, undefined, '调用 inspectDiskModules 后 process.noAsar 必须依然为 undefined');
 
 const cfg = loadModulesConfig();
 assert.equal(cfg.modules.chinese.enabled, true);
-assert.equal(cfg.modules.proxy.enabled, true);
+assert.equal(cfg.modules.proxy.enabled, false);
 
 console.log('ELECTRON_ASAR_VERIFIED_SUCCESS');
 `, 'utf8');

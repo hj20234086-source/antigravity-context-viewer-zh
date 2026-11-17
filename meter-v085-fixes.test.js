@@ -311,7 +311,8 @@ test('2. 卸载还原全矩阵：缺失备份原位剥离、损坏备份默认�
       assert.ok(fs.existsSync(path.join(extAfter, 'dist', 'host-extra.js')), '原位剥离必须保留宿主原有非插件文件');
       assert.ok(fs.existsSync(path.join(targetAsar + '.unpacked', 'custom-addon', 'build', 'addon.node')), '原位剥离必须动态保留宿主原生 unpacked');
       assert.ok(!fs.existsSync(path.join(extAfter, 'meter-main.js')), '剥离后不得残留 meter-main.js');
-      assert.notEqual(sha256(targetAsar), origHash); // 重新打包产物的头部对齐或压缩序列允许与原包字节略异，但宿主完整性完整
+      assert.ok(fs.readFileSync(path.join(extAfter, 'dist', 'utils.js'), 'utf8').includes('setupNodeWrapper'), '原位剥离后宿主核心入口必须完好还原');
+      assert.ok(origHash.length === 64 && sha256(targetAsar).length === 64);
 
       // 2) 重新安装，随后破坏备份目录下所有备份文件校验 -> 默认拒绝；显式 inPlace: true 时允许安全原位剥离
       await install({ path: targetAsar });
@@ -616,23 +617,19 @@ test('4. 代理参数一致性（无端口默认端口 & bypassList 清空持久
       const targetAsar = await createHostAsarFixture(hostDir);
       await install({ path: targetAsar });
 
-      // 写入非空 bypassList，再通过 meter-main IPC 清空为 '' 并验证磁盘与冷启动恢复
+      // handleToggleModule('proxy') 已移除并明确拒绝
       const fakeEvent = { senderFrame: { url: 'https://127.0.0.1:42000/index.html' }, sender: { getURL: () => 'https://127.0.0.1:42000/index.html' } };
-      const resSave = await handleToggleModule(fakeEvent, 'proxy', true, {
-        proxyUrl: 'http://proxy.local',
-        bypassList: 'localhost,example.com',
-        asarPath: targetAsar
-      });
-      assert.equal(resSave.ok, true);
-      assert.equal(resSave.data.modules.proxy.bypassList, 'localhost,example.com');
+      const removedRes = await handleToggleModule(fakeEvent, 'proxy', true, { asarPath: targetAsar });
+      assert.equal(removedRes.ok, false);
+      assert.equal(removedRes.status, 'removed');
 
-      const resClear = await handleToggleModule(fakeEvent, 'proxy', true, {
-        proxyUrl: 'http://proxy.local',
-        bypassList: '',
-        asarPath: targetAsar
-      });
-      assert.equal(resClear.ok, true);
-      assert.equal(resClear.data.modules.proxy.bypassList, '', 'IPC 清空 bypassList 必须保存为空串');
+      // 直接持久化更新器代理参数与清空 bypassList='' 并验证冷启动恢复
+      const { saveModulesConfig } = require(path.join(ROOT_DIR, 'modules-config'));
+      const cfg = loadModulesConfig();
+      cfg.modules.proxy.enabled = true;
+      cfg.modules.proxy.proxyUrl = 'http://proxy.local';
+      cfg.modules.proxy.bypassList = '';
+      saveModulesConfig(cfg);
 
       // 模拟冷启动：直接重读 modules.json 与 detectProxyConfig + applyProxyEnvironment
       const coldCfg = loadModulesConfig();

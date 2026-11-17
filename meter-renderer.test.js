@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), core = require('./meter-core');
 const source = fs.readFileSync(require('node:path').join(__dirname, 'meter-renderer.js'), 'utf8');
 function session(unknown = 0) { return { groups: Object.fromEntries(['user','assistant','thinking','tools','summaries','system','definitions'].map(k => [k,core.empty()])), total: { chars: 100, low: 10, high: 50 }, attachmentTotal: core.empty(), attachments: unknown ? [{ name: '<img onerror=bad>', status: 'unknown', unknownParts: ['图像 token 未知'], chars: 0, source: 'user' }] : [], unknownFiles: unknown, steps: 10, userMessages: 2, assistantMessages: 3 }; }
-function harness(scanSession = session()) {
+function harness(scanSession = session(), extraSandbox = null) {
   const elements = new Map();
   const docElements = new Map();
   const listeners = new Map();
@@ -94,11 +94,45 @@ function harness(scanSession = session()) {
   };
   const host = element(); host.attachShadow = () => ({ set innerHTML(value) {}, getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); } });
   const pending = [], scans = [], timers = [];
-  const sandbox = { location: { protocol: 'https:', hostname: '127.0.0.1', pathname: '/c/11111111-1111-1111-1111-111111111111' }, document: { createElement: () => element(), getElementById: id => docElements.get(id) || null, documentElement: { appendChild() {} }, addEventListener() {}, removeEventListener() {}, hidden: false }, window: { __APP_CONFIG__: { csrfToken: 'test' }, contextMeterAPI: { scan: id => new Promise(resolve => scans.push({ id, resolve })) } }, __AGContextMeterCore: core, AbortController, Date, setTimeout: () => 1, clearTimeout() {}, setInterval(callback) { timers.push(callback); return 1; }, clearInterval() {}, fetch(url, options) { return new Promise(resolve => pending.push({ url, options, resolve })); } };
+  const docListeners = new Map();
+  const normalizeCapture = opts => Boolean(opts === true || opts?.capture);
+  const sandbox = {
+    location: { protocol: 'https:', hostname: '127.0.0.1', pathname: '/c/11111111-1111-1111-1111-111111111111' },
+    document: {
+      createElement: () => element(),
+      getElementById: id => docElements.get(id) || null,
+      documentElement: { appendChild() {} },
+      addEventListener(type, fn, opts) {
+        if (!docListeners.has(type)) docListeners.set(type, []);
+        docListeners.get(type).push({ fn, capture: normalizeCapture(opts) });
+      },
+      removeEventListener(type, fn, opts) {
+        const list = docListeners.get(type);
+        if (!list) return;
+        const cap = normalizeCapture(opts);
+        const idx = list.findIndex(item => item.fn === fn && item.capture === cap);
+        if (idx >= 0) list.splice(idx, 1);
+      },
+      hidden: false
+    },
+    window: { __APP_CONFIG__: { csrfToken: 'test' }, contextMeterAPI: { scan: id => new Promise(resolve => scans.push({ id, resolve })) } },
+    __AGContextMeterCore: core,
+    AbortController,
+    Date,
+    setTimeout: () => 1,
+    clearTimeout() {},
+    setInterval(callback) { timers.push(callback); return 1; },
+    clearInterval() {},
+    fetch(url, options) { return new Promise(resolve => pending.push({ url, options, resolve })); },
+    ...(extraSandbox || {})
+  };
   // First createElement call is the host; later calls are safe text-only file rows.
   let first = true; sandbox.document.createElement = () => { if (first) { first = false; return host; } return element(); };
   vm.createContext(sandbox); vm.runInContext(source, sandbox);
-  return { sandbox, host, pending, scans, elements, tick: () => timers[0](), flush: () => new Promise(resolve => setImmediate(resolve)), finishScan(i = 0) { scans[i].resolve({ ok: true, data: { session: scanSession, scannedAt: Date.now(), latest: null } }); } };
+  const docTrigger = (type, ev = {}) => {
+    for (const entry of (docListeners.get(type) || []).slice()) entry.fn(ev);
+  };
+  return { sandbox, host, pending, scans, elements, docTrigger, docListeners, tick: () => timers[0](), flush: () => new Promise(resolve => setImmediate(resolve)), finishScan(i = 0) { scans[i].resolve({ ok: true, data: { session: scanSession, scannedAt: Date.now(), latest: null } }); } };
 }
 function response(chatModel) { return { ok: true, json: async () => ({ generatorMetadata: [{ chatModel }] }) }; }
 test('late old request and old full-scan responses cannot contaminate a newly selected chat', async () => {
@@ -474,10 +508,29 @@ test('window controls overlay spacer, convPane flex-grow self-healing, and clean
   api.dispose();
 });
 
-test('floating panels reposition clear of left project sidebar and overlay right auxiliary pane without clipping', () => {
-  const h = harness();
+test('right sidebar drawer docks inset with 8px gap, aligns with .agy-sheet top/bottom, pushes wide workspace cleanly, and plays smooth retract animation', async () => {
+  const pathMod = require('node:path');
+  const cssSrc = fs.readFileSync(pathMod.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.match(cssSrc, /\.ag-panel\{[^}]*transition:[^}]*transform \.24s[^}]*visibility \.24s/, '.ag-panel 必须包含同步的滑出与 visibility 退回过渡');
+  assert.match(cssSrc, /#panel-tokens\{[^}]*visibility \.24s/, '#panel-tokens 必须保留 visibility 过渡以避免关闭时瞬间消失');
+  assert.match(cssSrc, /\.ag-panel\[hidden\]\{[^}]*translateX\(calc\(100% \+ 16px\)\)/, '.ag-panel[hidden] 必须平滑退回右侧视口外');
+
+  let nextTimerId = 1;
+  const pendingTimeouts = new Map();
+  const h = harness(session(), {
+    setTimeout(fn, delay = 0) {
+      const id = nextTimerId++;
+      pendingTimeouts.set(id, { fn, delay: Number(delay) || 0 });
+      return id;
+    },
+    clearTimeout(id) {
+      pendingTimeouts.delete(id);
+    }
+  });
   const api = h.sandbox.__AGContextMeter;
-  // Simulate left project sidebar expanded (0..256px) and right auxiliary pane open (host right = 610px in 1280px window)
+  const pushTarget = { style: { marginRight: '', transition: '' } };
+  const stackRoot = { style: { zIndex: '' } };
+  h.host.closest = sel => (sel === 'div.relative.z-0' ? stackRoot : null);
   h.sandbox.window.innerWidth = 1280;
   h.sandbox.window.innerHeight = 800;
   h.host.getBoundingClientRect = () => ({ left: 420, top: 6, right: 610, bottom: 34, width: 190, height: 28 });
@@ -485,19 +538,79 @@ test('floating panels reposition clear of left project sidebar and overlay right
     if (sel === 'div[role="navigation"]') {
       return { getBoundingClientRect: () => ({ left: 0, top: 0, right: 256, bottom: 800, width: 256, height: 800 }) };
     }
+    if (sel === '.agy-sheet') {
+      return { getBoundingClientRect: () => ({ left: 264, top: 44, right: 844, bottom: 792, width: 580, height: 748 }) };
+    }
+    if (sel === '.agy-inset-shell > div.relative.flex') {
+      return pushTarget;
+    }
     return null;
   };
 
+  // 420px sidebar + 8px right inset in 1280px window with 256px left sidebar leaves 596px >= 460px -> pushes workspace by 428px
+  h.elements.get('badge').click();
+  const pCtx = h.elements.get('panel');
+  assert.equal(pCtx.hidden, false);
+  assert.equal(pCtx.style.top, '44px');
+  assert.equal(pCtx.style.right, '8px');
+  assert.equal(pCtx.style.bottom, '8px');
+  assert.equal(pCtx.style.height, '748px');
+  assert.equal(pCtx.style.left, `${1280 - 420 - 8}px`);
+  assert.equal(pushTarget.style.marginRight, '428px');
+  assert.equal(stackRoot.style.zIndex, '40');
+
+  // 730px tokens drawer in 1280px window leaves 286px < 460px -> overlays instead of crushing workspace
   h.elements.get('badge-tokens').click();
   const pTokens = h.elements.get('panel-tokens');
   assert.equal(pTokens.hidden, false);
   const leftPx = parseInt(pTokens.style.left, 10);
-  // Must be >= 256 + 12 = 268px (never occluded by left project sidebar) and extend rightward over Aux Pane
-  assert.equal(leftPx, 268);
-  assert.equal(pTokens.style.right, 'auto');
-  assert.ok(leftPx + 730 <= 1280 - 12);
+  assert.equal(leftPx, 1280 - 730 - 8);
+  assert.equal(pTokens.style.right, '8px');
+  assert.ok(leftPx >= 256, 'must stay clear of left project sidebar');
+  assert.equal(pTokens.getAttribute('data-overlay'), 'true');
+  assert.equal(pushTarget.style.marginRight, '');
 
+  // Clicking inside host/drawer keeps pushed sidebar open; dragging from inside host to outside also does not retract
+  h.elements.get('badge-quota').click();
+  const pQuota = h.elements.get('panel-quota');
+  assert.equal(pQuota.hidden, false);
+  assert.equal(pushTarget.style.marginRight, '428px');
+  h.docTrigger('pointerdown', { composedPath: () => [pQuota, h.host] });
+  h.docTrigger('click', { composedPath: () => [pQuota, h.host] });
+  assert.equal(pQuota.hidden, false);
+  assert.equal(pushTarget.style.marginRight, '428px');
+
+  h.docTrigger('pointerdown', { composedPath: () => [pQuota, h.host] });
+  h.docTrigger('click', { composedPath: () => [pushTarget] });
+  assert.equal(pQuota.hidden, false, 'dragging text selection across drawer edge must not close drawer');
+
+  // Clicking outside drawer retracts docked push-in drawer: marginRight resets synchronously while transition & zIndex stay active during 240ms slide-out
+  h.docTrigger('pointerdown', { composedPath: () => [pushTarget] });
+  h.docTrigger('click', { composedPath: () => [pushTarget] });
+  assert.equal(pQuota.hidden, true);
+  assert.equal(pQuota.getAttribute('data-instant-hide'), null, '关闭抽屉不得加 data-instant-hide，必须播放退回动画');
+  assert.equal(pushTarget.style.marginRight, '');
+  assert.match(pushTarget.style.transition, /margin-right 0\.24s/, '收回期间工作区 margin-right 过渡必须保留以伴随滑出动画');
+  assert.equal(stackRoot.style.zIndex, '40', '退回动画期间宿主层叠高度必须保持置顶，避免首帧被覆盖');
+  await Promise.resolve();
+  for (const [id, entry] of Array.from(pendingTimeouts.entries())) {
+    if (entry.delay <= 300) {
+      pendingTimeouts.delete(id);
+      entry.fn();
+    }
+  }
+  assert.equal(pushTarget.style.transition, '', '收回动画结束后工作区 transition 必须清理恢复');
+  assert.equal(stackRoot.style.zIndex, '', '收回动画结束后宿主层叠高度必须清理恢复');
+
+  // Disposing cleanly removes document capture listeners and resets workspace immediately
+  h.elements.get('badge').click();
+  assert.equal(pushTarget.style.marginRight, '428px');
   api.dispose();
+  assert.equal(pushTarget.style.marginRight, '');
+  assert.equal(pushTarget.style.transition, '');
+  assert.equal(stackRoot.style.zIndex, '');
+  assert.equal((h.docListeners.get('click') || []).filter(e => e.capture).length, 0);
+  assert.equal((h.docListeners.get('pointerdown') || []).filter(e => e.capture).length, 0);
 });
 
 test('custom background color (panelBg), custom Color Picker HEX->RGB/HSL sync, and heatmap 5-stop presets & 2-endpoint interpolation', () => {
@@ -779,13 +892,14 @@ test('default current period API reference amount, independent subscription spen
   h.elements.get('badge-tokens').click();
   h.elements.get('tok-view-cost').click();
 
-  // 1) 验证首屏默认并列展示：已记录用量按公开API折算金额（绝不显示为 $0）与用户实际支出
+  // 1) 验证首屏默认采用各模型官方价（hybrid）：已知模型按官方价，未识别历史兜底参考模型
   const titleEl = h.elements.get('cost-card-title');
   const periodTag = h.elements.get('cost-period-tag');
   const grandVal = h.elements.get('cost-grand-val');
   assert.equal(titleEl.textContent, '💰 本期 API 参考金额');
   assert.equal(periodTag.textContent, '2026-11 (自然月)');
-  assert.equal(grandVal.textContent, '约 $69.50');
+  assert.equal(grandVal.textContent, '约 $69.53');
+  assert.equal(h.elements.get('cost-coverage-pill').textContent, '各模型官方价');
 
   // 2) 验证并列展示的订阅支出（严禁回本或节省词汇）
   const subSpendVal = h.elements.get('cost-sub-spend-val');
@@ -798,7 +912,53 @@ test('default current period API reference amount, independent subscription spen
   assert.equal(grandVal.textContent, '$0.03');
   assert.equal(h.elements.get('cost-coverage-pill').textContent, '4.8% 计价覆盖');
 
-  // 4) 切换回“参考模型折算”并切换至“全量历史”
+  // 3b) 验证多模型官方价分项与动态单价：使用 Gemini 4 Hydrogen ($1.50/$0.075/$7.50 per 1M) 不得回退为 $0.75/M
+  h.sandbox.__AGContextMeter.applyTokenHistoryPayload({
+    updatedAt: '2026-11-17 12:00:00',
+    currentPeriod: { key: '2026-11', label: '2026-11 (自然月)', isCurrentMonth: true },
+    costEstimateCurrentMonth: {
+      pricedCostUSD: 37.50,
+      pricedRequestsCount: 5,
+      unpricedRequestsCount: 0,
+      coveragePercent: 100,
+      byCategory: { inputTokens: 10000000, cacheTokens: 100000000, outputTokens: 2000000 },
+      byCategoryCost: { inputCostUSD: 15.00, cacheCostUSD: 7.50, outputCostUSD: 15.00 },
+      byModel: {
+        'gemini-4-hydrogen': {
+          displayName: 'Gemini 4 Hydrogen',
+          requests: 5,
+          costUSD: 37.50,
+          tokens: 112000000,
+          tierRates: { inputPerMillion: 1.5, cacheReadPerMillion: 0.075, outputPerMillion: 7.5 }
+        }
+      }
+    },
+    summary: {
+      monthTokens: 112000000,
+      currentMonthInput: 10000000,
+      currentMonthCache: 100000000,
+      currentMonthOutput: 2000000,
+      grandTotalTokens: 112000000,
+      totalInputTokens: 10000000,
+      totalCacheTokens: 100000000,
+      totalOutputTokens: 2000000
+    }
+  });
+  h.elements.get('cost-btn-mode-hybrid').click();
+  assert.equal(grandVal.textContent, '约 $37.50');
+  assert.equal(h.elements.get('cost-coverage-pill').textContent, '100% 官方计价');
+  assert.equal(h.elements.get('ref-cost-input-val').textContent, '$15.00');
+  assert.equal(h.elements.get('ref-cost-input-rate').textContent, '($1.50/M)');
+  assert.equal(h.elements.get('ref-cost-cache-val').textContent, '$7.50');
+  assert.equal(h.elements.get('ref-cost-cache-rate').textContent, '($0.075/M)');
+  assert.equal(h.elements.get('ref-cost-output-val').textContent, '$15.00');
+  assert.equal(h.elements.get('ref-cost-output-rate').textContent, '($7.50/M)');
+  assert.match(h.elements.get('cost-breakdown-info').textContent, /Gemini 4 Hydrogen/);
+
+  // Restore mockPayload for downstream single-ref benchmark & custom plan assertions
+  h.sandbox.__AGContextMeter.applyTokenHistoryPayload(mockPayload);
+
+  // 4) 切换为“单模型基准估算”并切换至“全量历史”
   h.elements.get('cost-btn-mode-ref').click();
   h.elements.get('cost-btn-scope-all').click();
   assert.equal(titleEl.textContent, '💰 全量 API 参考金额');
@@ -1622,17 +1782,15 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   assert.equal(api.getContextPreferencesState().selectedProductKey, 'product:google:gemini-4-argon');
   assert.equal(h.elements.get('btn-ctx-back-current').hidden, true);
 
-  // 打开 ⚙ 设置视图，验证汉化、代理、外观 DOM ID 与事件仍在且 ‹ 返回有效
+  // 打开 ⚙ 设置视图，验证汉化、外观 DOM ID 与事件仍在且免 TUN 入口已彻底移除
   h.elements.get('btn-ctx-settings').click();
   await h.flush();
   assert.equal(h.elements.get('pane-ctx-settings').hidden, false);
   assert.equal(h.elements.get('ctx-tabs-bar').hidden, false);
   assert.ok(h.elements.get('btn-toggle-chinese'));
   assert.ok(h.elements.get('btn-toggle-chinese-module'));
-  assert.ok(h.elements.get('btn-toggle-proxy'));
-  assert.ok(h.elements.get('input-proxy-url'));
-  assert.ok(h.elements.get('input-proxy-bypass'));
-  assert.ok(h.elements.get('btn-toggle-proxy-module'));
+  assert.equal(h.elements.get('proxy-notun-drawer'), undefined, '免 TUN 设置折叠面板必须已移除');
+  assert.equal(h.elements.get('btn-toggle-proxy'), undefined);
   assert.ok(h.elements.get('btn-toggle-colors'));
   assert.ok(h.elements.get('color-panelBg'));
   assert.ok(h.elements.get('btn-panel-palette'));
@@ -1641,7 +1799,7 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   let toggleCalled = false;
   h.sandbox.window.contextMeterAPI.toggleModule = async (mod) => {
     if (mod === 'chinese') toggleCalled = true;
-    return { ok: true, data: { modules: { chinese: { enabled: false }, proxy: { enabled: false } } } };
+    return { ok: true, data: { modules: { chinese: { enabled: false } } } };
   };
   h.elements.get('btn-toggle-chinese-module').click();
   await h.flush();
@@ -1651,8 +1809,9 @@ test('3 分页布局、设置视图迁移、7.1 禁用词与查看模型选择�
   assert.equal(h.elements.get('pane-ctx-settings').hidden, true);
   assert.equal(h.elements.get('pane-ctx-models').hidden, false);
 
-  // 7.1 禁用词检查：模板中 #panel 区域及普通视图动态 DOM 文本均不可出现技术黑话
+  // 7.1 禁用词检查：模板中 #panel 区域及普通视图动态 DOM 文本均不可出现技术黑话与已移除模块标识
   const tplHtml = fs.readFileSync(require('node:path').join(__dirname, 'src', 'renderer', 'template.html'), 'utf8');
+  assert.equal(tplHtml.includes('proxy-notun-drawer'), false);
   const panelSection = tplHtml.slice(tplHtml.indexOf('id="panel"'), tplHtml.indexOf('id="token-panel"'));
   const forbiddenTerms = ['共享后端', '动态透传', 'Gate', 'sidecar', 'PE 指纹', '补丁', '二进制', 'language_server', 'manifest'];
   const collectedRuntimeText = [
@@ -4538,14 +4697,27 @@ test('[P2] same-rank authoritative created_at revision updates persisted ledger 
 test('PR #13 & PR #21: 弹窗动态锚点定位、首帧显示前预设坐标、无缩放/left防抖与繁中术语回归', async () => {
   const pathMod = require('node:path');
   const cssSrc = fs.readFileSync(pathMod.join(__dirname, 'src', 'renderer', 'styles.css'), 'utf8');
-  // 1. 验证 styles.css 无 .ag-unit:active transform 缩放且 #panel-tokens 无 left transition
+  // 1. 验证 styles.css 无 .ag-unit:active transform 缩放、#panel-tokens 无 left transition 且圆角全部严格收敛到设计体系 Token
   const activeBlock = cssSrc.match(/\.ag-unit:active\s*\{[^}]*\}/)?.[0] || '';
   assert.doesNotMatch(activeBlock, /transform\s*:\s*scale/i, '.ag-unit:active 不应有按压缩放');
   const tokensRule = cssSrc.match(/#panel-tokens\s*\{[^}]*\}/)?.[0] || '';
   assert.doesNotMatch(tokensRule, /\bleft\s+\./i, '#panel-tokens 不应对 left 做过渡动画');
   assert.match(cssSrc, /#overflow-menu\s*\{[^}]*box-sizing\s*:\s*border-box/i);
+  const rawRadii = Array.from(cssSrc.matchAll(/border-radius\s*:\s*([^;}\n]+)/g)).map(m => m[1].trim());
+  const allowedRadii = new Set([
+    'var(--ag-radius-panel)',
+    'var(--ag-radius-md)',
+    'var(--ag-radius-sm)',
+    'var(--ag-radius-xs)',
+    'var(--ag-radius-xs) var(--ag-radius-xs) 0 0',
+    '50%',
+    '0'
+  ]);
+  for (const r of rawRadii) {
+    assert.ok(allowedRadii.has(r), `styles.css 出现未统一圆角值: ${r}`);
+  }
 
-  // 2. 验证每个触发按钮锚点（badge / badge-speed / badge-tokens / badge-quota / overflow）与先定位再显示
+  // 2. 验证所有主视图统一停靠在右侧边栏（首帧显示前预设坐标），支持抽屉内导航切换，且溢出菜单保持锚定下拉
   const h = harness();
   const api = h.sandbox.__AGContextMeter;
   try {
@@ -4558,49 +4730,65 @@ test('PR #13 & PR #21: 弹窗动态锚点定位、首帧显示前预设坐标、
     h.elements.get('badge-quota').getBoundingClientRect = () => ({ left: 1052, top: 6, width: 52, height: 28, right: 1104, bottom: 34 });
     h.elements.get('badge-overflow').getBoundingClientRect = () => ({ left: 1108, top: 6, width: 28, height: 28, right: 1136, bottom: 34 });
 
-    // 验证 showPanel 在 hidden=false 前已将 style.left 写入
+    // 验证 showPanel 在 hidden=false 前已将 style.left / style.right 写入
     let leftWhenUnhidden = null;
+    let rightWhenUnhidden = null;
     const panel = h.elements.get('panel');
     let hiddenVal = true;
     Object.defineProperty(panel, 'hidden', {
       get: () => hiddenVal,
       set: (v) => {
-        if (v === false) leftWhenUnhidden = panel.style.left;
+        if (v === false) {
+          leftWhenUnhidden = panel.style.left;
+          rightWhenUnhidden = panel.style.right;
+        }
         hiddenVal = Boolean(v);
       }
     });
 
     h.elements.get('badge').click();
     assert.ok(leftWhenUnhidden && leftWhenUnhidden !== '', '取消 hidden 前必须已预设 style.left');
-    assert.equal(panel.style.left, `${908 - 472}px`);
+    assert.equal(rightWhenUnhidden, '8px', '取消 hidden 前必须已停靠到 right: 8px（对齐宿主浮层外边距）');
+    assert.equal(panel.style.left, `${1280 - 420 - 8}px`);
     assert.equal(h.elements.get('badge').getAttribute('aria-expanded'), 'true');
     assert.equal(h.elements.get('badge-speed').getAttribute('aria-expanded'), 'false');
 
     h.elements.get('badge-speed').click();
-    assert.equal(panel.style.left, `${976 - 472}px`);
+    assert.equal(panel.style.left, `${1280 - 420 - 8}px`);
+    assert.equal(panel.style.right, '8px');
     assert.equal(h.elements.get('badge-speed').getAttribute('aria-expanded'), 'true');
 
-    h.elements.get('badge-tokens').click();
-    assert.equal(h.elements.get('panel-tokens').style.left, `${1048 - 730}px`);
+    // 通过侧边栏内部导航在上下文 / 额度 / 用量间平滑切换
+    h.elements.get('nav-ctx-quota').click();
+    assert.equal(h.elements.get('panel-quota').hidden, false);
+    assert.equal(panel.hidden, true);
+    assert.equal(h.elements.get('panel-quota').style.left, `${1280 - 420 - 8}px`);
+    assert.equal(h.elements.get('panel-quota').style.right, '8px');
 
-    h.elements.get('badge-quota').click();
-    assert.equal(h.elements.get('panel-quota').style.left, `${1104 - 460}px`);
+    h.elements.get('nav-quo-tokens').click();
+    assert.equal(h.elements.get('panel-tokens').hidden, false);
+    assert.equal(h.elements.get('panel-quota').hidden, true);
+    assert.equal(h.elements.get('panel-tokens').style.left, `${1280 - 730 - 8}px`);
+    assert.equal(h.elements.get('panel-tokens').style.right, '8px');
 
-    // 溢出入口打开 tokens / quota 时必须对齐 badge-overflow 而非隐藏按钮
+    // 溢出菜单依然就地锚定在 badge-overflow 下方；点击其菜单项则统一展开右侧抽屉
     h.elements.get('badge-overflow').click();
     assert.equal(h.elements.get('overflow-menu').hidden, false);
     assert.equal(h.elements.get('overflow-menu').style.left, `${1136 - 220}px`);
     h.elements.get('overflow-tokens-btn').click();
-    assert.equal(h.elements.get('panel-tokens').style.left, `${1136 - 730}px`);
+    assert.equal(h.elements.get('panel-tokens').style.left, `${1280 - 730 - 8}px`);
+    assert.equal(h.elements.get('panel-tokens').style.right, '8px');
     h.elements.get('overflow-quota-btn').click();
-    assert.equal(h.elements.get('panel-quota').style.left, `${1136 - 460}px`);
+    assert.equal(h.elements.get('panel-quota').style.left, `${1280 - 420 - 8}px`);
+    assert.equal(h.elements.get('panel-quota').style.right, '8px');
 
-    // 窄屏越界钳位
+    // 窄屏右侧自适应钳位
     h.sandbox.window.innerWidth = 600;
     h.host.getBoundingClientRect = () => ({ left: 400, top: 6, width: 180, height: 28, right: 580, bottom: 34 });
     h.elements.get('badge').getBoundingClientRect = () => ({ left: 400, top: 6, width: 60, height: 28, right: 460, bottom: 34 });
     h.elements.get('badge').click();
-    assert.equal(panel.style.left, '12px');
+    assert.equal(panel.style.left, `${600 - 420 - 8}px`);
+    assert.equal(panel.style.right, '8px');
 
     // 3. 验证 PR #21 繁中译文与参数占位符完好
     h.elements.get('btn-top-lang-zh-TW').click();

@@ -793,14 +793,18 @@ test('meter-main.js 模块 IPC: 跨平台提示无 install.bat、代理校验与
     const localFrame = { url: 'https://127.0.0.1:5173/' };
     const localEv = { senderFrame: localFrame, sender: { mainFrame: localFrame } };
 
-    // 1. 在 macOS 下请求开启未注入组件时，不得出现 install.bat 字样
+    // 1. 在 macOS 下请求开启未注入组件时，不得出现 install.bat 字样；免 TUN 已移除应明确拒绝
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     const fakeUninjectedAsar = path.join(tempDir, 'empty.asar');
-    const modResMac = await handlers['context-meter:toggle-module'](localEv, 'proxy', true, { asarPath: fakeUninjectedAsar });
+    const modResProxy = await handlers['context-meter:toggle-module'](localEv, 'proxy', true, { asarPath: fakeUninjectedAsar });
+    assert.equal(modResProxy.ok, false);
+    assert.equal(modResProxy.status, 'removed');
+
+    const modResMac = await handlers['context-meter:toggle-module'](localEv, 'chinese', true, { asarPath: fakeUninjectedAsar });
     assert.equal(modResMac.ok, false);
     assert.equal(modResMac.status, 'install_failed');
     assert.doesNotMatch(modResMac.error, /install\.bat/);
-    assert.match(modResMac.error, /node cli\.js proxy:enable/);
+    assert.match(modResMac.error, /node cli\.js chinese:enable/);
 
     // 2. status 返回包含 runtime 元数据
     const statusRes = await handlers['context-meter:modules-status'](localEv, fakeUninjectedAsar);

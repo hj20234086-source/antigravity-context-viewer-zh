@@ -18,7 +18,6 @@ const { loadAsarEngine, getStateDir } = require('./asar-engine');
 const { install, findAsarPath, tryHotInject, tryHotInjectDetailed, probeLiveHostRuntimeInfo, shutdownLiveHostGracefully, extractAsarFile } = require('./install');
 const { restore } = require('./restore');
 const { resolvePython, syncLiveRuntimeBundle } = require('./meter-collector');
-const { redactProxyUrl } = require('./meter-proxy');
 const { analyzeBinary, analyzeBinaryAsync, applyUnlock, restoreUnlock, AUTHOR_INFO } = require('./meter-context-unlock');
 
 const asar = loadAsarEngine();
@@ -506,12 +505,6 @@ async function main() {
     console.log(`     * 配置状态: [配置: ${cfg.modules.chinese.enabled ? '已开启' : '已关闭'}]`);
     console.log(`     * 磁盘组件: ${disk.chineseReady ? '✅ 已注入（支持配置门禁与离线切换）' : (disk.chinese ? '⚠️ 磁盘注入不完整' : '⚪ 未注入')}`);
     console.log(`     * 生效说明: ${cfg.modules.chinese.enabled ? '⏳ 重启 Antigravity 客户端后加载中文' : '⚪ 默认保持官方原生英文，可在客户端面板中随时开启并重启生效'}`);
-
-    console.log('   - 🌐 免 TUN 网络直连 (本地代理):');
-    console.log(`     * 配置状态: [配置: ${cfg.modules.proxy.enabled ? '已开启' : '已关闭'}] (代理: ${redactProxyUrl(cfg.modules.proxy.proxyUrl) || '未配置'})`);
-    console.log(`     * 磁盘组件: ${disk.proxyReady ? '✅ 已注入（支持 Session 代理与环境变量拦截）' : (disk.proxy ? '⚠️ 磁盘注入不完整' : '⚪ 未注入')}`);
-    console.log(`     * 生效说明: ${cfg.modules.proxy.enabled ? '🔍 需通过 node cli.js proxy:test 测试连通性' : '⚪ 跟随系统默认网络栈，可在客户端面板中随时配置并开启'}`);
-    console.log(`     * 模型请求验证: 待通过真实在线会话验证 (分层标定，未发送请求前不宣称生效)`);
     console.log(`✅ 运行中窗口热挂载状态: ${manifest.liveInjected ? (backendAligned ? '已即时生效（无需重启）' : '界面已挂载但后台需重启对齐') : '将在下次启动 Antigravity 时自动生效'}`);
     if (process.env.AG_EMIT_INSTALL_META === '1') {
       console.log('__AG_INSTALL_META__=' + JSON.stringify({
@@ -570,11 +563,9 @@ async function main() {
     console.log('   - 磁盘清理状态:');
     console.log('     * ⚡ 上下文与 Token 监控: 磁盘代码已移除');
     console.log('     * 🇨🇳 客户端界面汉化: 磁盘注入已移除');
-    console.log('     * 🌐 免 TUN 网络直连: 磁盘代理拦截已移除');
     console.log('   - 运行中残留与重启说明:');
     console.log(`     * 上下文监控: ${res.hotDisposed ? '已通过 CDP 即时销毁运行实例' : '运行实例需重启客户端彻底清理'}`);
     console.log('     * 界面汉化: 运行中已渲染 DOM 受客户端页面内存缓存影响，需完全重启客户端彻底恢复纯净英文');
-    console.log('     * 代理环境: 运行中进程已加载的 process.env 环境变量与 Electron session 代理无法即时热撤销，必须完全重启客户端以彻底退出代理环境');
   } else if (cmd === 'unlock-status') {
     console.log('🔍 正在检测 Antigravity 后端上下文调整状态...');
     const st = await analyzeBinaryAsync(customPath);
@@ -682,15 +673,6 @@ async function main() {
     if (cfg.modules.chinese.migratedFrom) {
       console.log(`   - 迁移来源: ${cfg.modules.chinese.migratedFrom}`);
     }
-
-    console.log('3. 免 TUN 网络直连 (ProxyNoTun):');
-    console.log(`   - 配置状态: ${cfg.modules.proxy.enabled ? '🟢 已启用' : '⚪ 已禁用'}`);
-    console.log(`   - 代理地址: ${cfg.modules.proxy.proxyUrl || '未配置'}`);
-    console.log(`   - 绕过列表: ${cfg.modules.proxy.bypassList || '默认'}`);
-    console.log(`   - 磁盘注入: ${asarUtils.includes('Antigravity Proxy NoTun') ? '✅ 已注入' : '⚪ 未注入'}`);
-    if (cfg.modules.proxy.migratedFrom) {
-      console.log(`   - 迁移来源: ${cfg.modules.proxy.migratedFrom}`);
-    }
   } else if (cmd === 'chinese:enable' || cmd === 'chinese:disable') {
     const { loadModulesConfig, saveModulesConfig } = require('./modules-config');
     const cfg = loadModulesConfig();
@@ -701,44 +683,8 @@ async function main() {
     saveModulesConfig(cfg);
     await install({ path: customPath, modules: { chinese: { enabled: enable, language: cfg.modules.chinese.language } } });
     console.log(`✅ 客户端界面汉化模块已${enable ? '开启' : '关闭'}并完成 ASAR 注入同步！`);
-  } else if (cmd === 'proxy:enable' || cmd === 'proxy:disable') {
-    const { loadModulesConfig, saveModulesConfig } = require('./modules-config');
-    const cfg = loadModulesConfig();
-    const enable = cmd === 'proxy:enable';
-    cfg.modules.proxy.enabled = enable;
-    cfg.modules.proxy.lastUpdated = new Date().toISOString();
-    saveModulesConfig(cfg);
-    await install({ path: customPath, modules: { proxy: { enabled: enable } } });
-    console.log(`✅ 免 TUN 网络直连模块已${enable ? '开启' : '关闭'}并完成 ASAR 注入同步！`);
-  } else if (cmd === 'proxy:set') {
-    const rawUrl = args[1] && !args[1].startsWith('-') ? args[1] : args[2];
-    if (!rawUrl) throw new Error('请提供有效的代理地址，例如: node cli.js proxy:set http://127.0.0.1:7890');
-    const { parseAndValidateProxyUrl } = require('./meter-proxy');
-    const check = parseAndValidateProxyUrl(rawUrl);
-    if (!check.ok) {
-      throw new Error(check.error || '代理地址格式错误，需包含有效协议(http/https/socks5)与端口(1-65535)');
-    }
-    const newUrl = check.value;
-    const { loadModulesConfig, saveModulesConfig } = require('./modules-config');
-    const cfg = loadModulesConfig();
-    cfg.modules.proxy.proxyUrl = newUrl;
-    cfg.modules.proxy.lastUpdated = new Date().toISOString();
-    saveModulesConfig(cfg);
-    if (cfg.modules.proxy.enabled) {
-      await install({ path: customPath, modules: { proxy: { proxyUrl: newUrl } } });
-    }
-    console.log(`✅ 代理地址已更新为: ${newUrl}`);
-  } else if (cmd === 'proxy:test') {
-    const { loadModulesConfig, testProxyHealth } = require('./modules-config');
-    const cfg = loadModulesConfig();
-    const urlToTest = args[1] && !args[1].startsWith('-') ? args[1] : cfg.modules.proxy.proxyUrl;
-    console.log(`🔍 正在分层检测代理地址连通性: ${urlToTest}...`);
-    const r = await testProxyHealth(urlToTest);
-    console.log(`  - 1. 配置格式验证: ${r.configValid ? '✅ 合法' : '❌ 错误'}`);
-    console.log(`  - 2. 本地代理端口: ${r.proxyReachable ? '✅ 可连接' : '❌ 无法连接'}`);
-    console.log(`  - 3. 实际网络连通: ${r.internetReachable ? '✅ 可访问公网' : '⚠️ 无法访问公网 (可能节点无境外连接)'}`);
-    console.log(`  - 4. 真实模型请求: 待通过真实在线会话验证 (分层标定)`);
-    if (r.error) console.log(`  ⚠️ 诊断提示: ${r.error}`);
+  } else if (cmd === 'proxy:enable' || cmd === 'proxy:disable' || cmd === 'proxy:set' || cmd === 'proxy:test') {
+    throw new Error('免 TUN 网络直连功能已移除，不再提供 proxy:* 命令。');
   } else if (cmd === 'status') {
     await cmdStatus(customPath);
   } else if (cmd === 'check') {

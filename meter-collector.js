@@ -3434,6 +3434,31 @@ async function collectTokenHistoryCoreAsync(options = {}, extraContext = {}) {
     return null;
   };
 
+  // 按日期与来源累加已识别模型的官方 API 实算费用及分类用量，供热力图与每日统计卡片按各模型官方价精准折算
+  const accumulateKnownCostToDayRecord = (rec, calc) => {
+    if (!rec || !calc) return;
+    rec.knownCostUSD = Number(((rec.knownCostUSD || 0) + (calc.costUSD || 0)).toFixed(6));
+    rec.knownInput = (rec.knownInput || 0) + (calc.inputTokens || 0);
+    rec.knownCache = (rec.knownCache || 0) + (calc.cacheTokens || 0);
+    rec.knownOutput = (rec.knownOutput || 0) + (calc.outputTokens || 0);
+    rec.knownInputCostUSD = Number(((rec.knownInputCostUSD || 0) + (calc.inputCostUSD || 0)).toFixed(6));
+    rec.knownCacheCostUSD = Number(((rec.knownCacheCostUSD || 0) + (calc.cacheCostUSD || 0)).toFixed(6));
+    rec.knownOutputCostUSD = Number(((rec.knownOutputCostUSD || 0) + (calc.outputCostUSD || 0)).toFixed(6));
+  };
+
+  for (const [ledgerKey, c] of finalCallsEntries) {
+    if (!c) continue;
+    const calc = calculateRequestApiCost(c);
+    if (!calc || !calc.isPriced) continue;
+    const effDate = resolveLedgerCallDate(ledgerKey, c);
+    if (!effDate || !/^\d{4}-\d{2}-\d{2}$/.test(effDate)) continue;
+    const srcMap = c.source === 'cli' ? mergedCli : mergedDesktop;
+    accumulateKnownCostToDayRecord(srcMap[effDate], calc);
+    if (dailyMapAll[effDate] && dailyMapAll[effDate] !== srcMap[effDate]) {
+      accumulateKnownCostToDayRecord(dailyMapAll[effDate], calc);
+    }
+  }
+
   // 按来源与日期汇总未匹配任何实时 transcript 的账本调用，用于抵扣 v2 / v1 历史归档中已被账本覆盖的份额
   const unmatchedLedgerBySourceDate = new Map();
   for (const [ledgerKey, c] of finalCallsEntries) {

@@ -1268,78 +1268,6 @@ test('异步刷新竞态不覆盖草稿、立即忙态反馈 (<100ms)、提交/�
   }
 });
 
-test('免 TUN 前端生命周期：输入保留不冲掉、区分待重启/运行中已生效，及 Live HTTP 测试降级', async () => {
-  const h = createTestHarness();
-  try {
-    let toggleArgs = [];
-    let fetchCalls = [];
-    h.sandbox.window.contextMeterAPI.getModulesStatus = async () => ({
-      ok: true,
-      data: {
-        modules: {
-          chinese: { enabled: false, brandTitle: 'english' },
-          proxy: { enabled: true, proxyUrl: 'http://127.0.0.1:7897', bypassList: 'localhost,127.0.0.1' }
-        }
-      },
-      disk: { chinese: true, proxy: true },
-      runtime: { proxyActive: false, runtimeProxyUrl: null, proxyNeedsRestart: true }
-    });
-    h.sandbox.window.contextMeterAPI.toggleModule = async (name, enable, opts) => {
-      toggleArgs.push({ name, enable, opts });
-      return {
-        ok: true,
-        status: 'config_toggled',
-        data: { modules: { chinese: { enabled: false }, proxy: { enabled: enable, proxyUrl: opts.proxyUrl || 'http://127.0.0.1:7897' } } },
-        disk: { chinese: true, proxy: true },
-        runtime: { proxyActive: false, proxyNeedsRestart: Boolean(enable) },
-        restartRequired: Boolean(enable)
-      };
-    };
-
-    h.elements.get('btn-toggle-proxy').click();
-    await new Promise(r => setTimeout(r, 25));
-
-    // 配置开启但启动时未激活 -> 明确展示待重启生效
-    assert.equal(h.elements.get('proxy-badge').textContent, '⏳ 已配置 · 待重启生效');
-    const urlInput = h.elements.get('input-proxy-url');
-    urlInput.value = 'http://127.0.0.1:17890';
-    urlInput.trigger('input');
-
-    // 未保存前后台刷新不得覆盖用户输入，且保存配置按钮自动显示
-    h.elements.get('btn-toggle-chinese').click();
-    await new Promise(r => setTimeout(r, 25));
-    assert.equal(urlInput.value, 'http://127.0.0.1:17890');
-    assert.equal(h.elements.get('btn-save-proxy-config').hidden, false);
-
-    // 点击保存代理地址按钮直接保存新端口并维持开启态
-    h.elements.get('btn-save-proxy-config').click();
-    await new Promise(r => setTimeout(r, 25));
-    assert.equal(toggleArgs[0].name, 'proxy');
-    assert.equal(toggleArgs[0].enable, true);
-    assert.equal(toggleArgs[0].opts.proxyUrl, 'http://127.0.0.1:17890');
-
-    // 验证 Live HTTP 模式无 contextMeterAPI.testProxy 时 fallback 到 /test-proxy
-    delete h.sandbox.window.contextMeterAPI.testProxy;
-    h.sandbox.window.__AGContextMeterLive = { port: 45678, token: 'live-secret' };
-    h.sandbox.fetch = async (url, init) => {
-      fetchCalls.push({ url, init });
-      return {
-        ok: true,
-        json: async () => ({
-          ok: true,
-          data: { configValid: true, proxyReachable: true, internetReachable: true, modelCallVerified: false }
-        })
-      };
-    };
-    h.elements.get('btn-test-proxy').click();
-    await new Promise(r => setTimeout(r, 30));
-    assert.equal(fetchCalls.length, 1);
-    assert.equal(fetchCalls[0].url, 'http://127.0.0.1:45678/test-proxy');
-  } finally {
-    h.api.dispose();
-  }
-});
-
 test('冷启动与连续5次会话切换性能隔离：切路由不强刷全量历史、加载中可开关面板且不泄露旧会话数值', async () => {
   const historyCalls = [];
   const pendingHistory = [];
@@ -2008,12 +1936,16 @@ test('ELV-44 & ELV-62: bootProxySnapshot 严禁未注入即虚报 active，部�
 
     const statusRes = await handlers['context-meter:modules-status'](ev, partialAsar);
     assert.equal(statusRes.ok, true);
-    assert.equal(statusRes.runtime.proxyActive, false, '未注入启动标记且无环境代理时绝不谎报 proxyActive=true');
-    assert.equal(statusRes.runtime.proxyNeedsRestart, true);
+    assert.equal(statusRes.runtime.proxyActive, false, '免 TUN 已移除且 runtime 绝不谎报 proxyActive=true');
+    assert.equal(statusRes.runtime.proxyNeedsRestart, false, '免 TUN 已移除后不得产生待重启标记');
     assert.equal(statusRes.disk.proxy, true);
     assert.equal(statusRes.disk.proxyReady, false);
     assert.equal(statusRes.disk.chinese, true);
     assert.equal(statusRes.disk.chineseReady, false);
+
+    const toggleRemovedProxyRes = await handlers['context-meter:toggle-module'](ev, 'proxy', true, { asarPath: partialAsar });
+    assert.equal(toggleRemovedProxyRes.ok, false);
+    assert.equal(toggleRemovedProxyRes.status, 'removed');
 
     const togglePartialRes = await handlers['context-meter:toggle-module'](ev, 'chinese', true, { asarPath: partialAsar });
     assert.equal(togglePartialRes.ok, false);

@@ -671,7 +671,7 @@ test('顶栏入口顺序、独立弹窗锚点、防底裁切 maxHeight 与 Notic
   });
   assert.equal(availNotice.noticeText, 'Model deprecated on Nov 18');
 
-  // 3. 验证矮窗口 + 锚点分离下动态 maxHeight 防止面板被视口底边截断
+  // 3. 验证矮窗口下全高右置侧边栏动态高度防视口裁切，以及统一右侧停靠与切换
   const h = createQuotaRendererHarness({
     innerWidth: 1180,
     innerHeight: 540,
@@ -688,15 +688,19 @@ test('顶栏入口顺序、独立弹窗锚点、防底裁切 maxHeight 与 Notic
   const pQuota = h.elements.get('panel-quota');
   const pTop = parseInt(pQuota.style.top, 10);
   const pMaxH = parseInt(pQuota.style.maxHeight, 10);
-  assert.ok(Number.isFinite(pMaxH) && pTop + pMaxH <= 540 - 14, `面板顶+最大高(${pTop}+${pMaxH})绝不可超出视口`);
+  assert.ok(Number.isFinite(pMaxH) && pTop + pMaxH <= 540, `面板顶+最大高(${pTop}+${pMaxH})绝不可超出视口`);
+  assert.equal(pQuota.style.right, '8px', '模型额度看板应统一停靠在右侧边栏并留出与宿主卡一致的 8px 边距');
 
-  // 点击 speed 与 badge 触发不同的面板锚点，互不串用
+  // 点击顶部 speed 与 badge 统一从右侧边栏推入/切换，不再在各按钮下方孤立悬垂弹出
   h.elements.get('badge-speed').click();
-  const panelLeftFromSpeed = parseInt(h.elements.get('panel').style.left, 10);
-  h.elements.get('badge').click(); // close since already open at speed? clicking badge switches anchor and stays open
-  const panelLeftFromBadge = parseInt(h.elements.get('panel').style.left, 10);
-  assert.notEqual(panelLeftFromSpeed, panelLeftFromBadge, '速度与上下文入口应各自锚定自身按钮右缘');
-  assert.notEqual(pQuota.style.left, h.elements.get('panel').style.left, '额度与上下文弹窗锚点必须独立');
+  const panel = h.elements.get('panel');
+  assert.equal(panel.hidden, false);
+  assert.equal(pQuota.hidden, true);
+  assert.equal(panel.style.right, '8px');
+  assert.equal(panel.style.left, `${1180 - 420 - 8}px`);
+  h.elements.get('badge').click();
+  assert.equal(panel.hidden, false, '从 speed 锚点切换到上下文徽章时保持侧边栏打开');
+  assert.equal(panel.style.right, '8px');
   api.dispose();
 });
 

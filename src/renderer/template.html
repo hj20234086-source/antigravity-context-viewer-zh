@@ -30,7 +30,7 @@
 <!-- 顶部基本单元 2: 输出速度 (tok/s) -->
 <button id="badge-speed" class="ag-unit" type="button" aria-label="模型输出速度与耗时统计" data-i18n-aria="badge.speed.aria"
   aria-expanded="false">
-  <span class="speed-icon" aria-hidden="true">⚡</span>
+  <span class="speed-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"/></svg></span>
   <span id="speed-amount">-- tok/s</span>
   <span id="speed-hover-extra" class="sr-only"></span>
 </button>
@@ -76,15 +76,15 @@
 <!-- 窄屏溢出菜单 -->
 <div id="overflow-menu" hidden aria-label="更多统计快捷菜单" data-i18n-aria="overflow.aria">
   <button id="overflow-quota-btn" class="overflow-item" type="button">
-    <span class="overflow-item-label"><span>◔</span><span data-i18n="overflow.quota">模型额度</span></span>
+    <span class="overflow-item-label"><span class="overflow-item-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 8V4.2M8 8l2.8 1.6" stroke-linecap="round"/></svg></span><span data-i18n="overflow.quota">模型额度</span></span>
     <span id="overflow-quota-val" class="overflow-item-val">--</span>
   </button>
   <button id="overflow-speed-btn" class="overflow-item" type="button">
-    <span class="overflow-item-label"><span>⚡</span><span data-i18n="overflow.speed">输出速度</span></span>
+    <span class="overflow-item-label"><span class="overflow-item-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"/></svg></span><span data-i18n="overflow.speed">输出速度</span></span>
     <span id="overflow-speed-val" class="overflow-item-val">-- tok/s</span>
   </button>
   <button id="overflow-tokens-btn" class="overflow-item" type="button">
-    <span class="overflow-item-label"><span class="token-fire-dot"></span><span data-i18n="overflow.tokens">Token
+    <span class="overflow-item-label"><span class="overflow-item-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 13V9M8 13V4M13 13V7"/></svg></span><span data-i18n="overflow.tokens">Token
         用量一览</span></span>
     <span id="overflow-tokens-val" class="overflow-item-val">--</span>
   </button>
@@ -95,12 +95,15 @@
   </button>
 </div>
 
-<!-- 弹出式面板 1: 会话上下文与速度监控 (#panel, 450px) -->
-<section id="panel" class="ag-panel" hidden aria-label="会话与上下文详情" data-i18n-aria="panel.ctx.aria">
+<!-- 侧边栏抽屉 1: 会话上下文与速度监控 (#panel) -->
+<section id="panel" class="ag-panel ag-panel-flex" hidden aria-label="会话与上下文详情" data-i18n-aria="panel.ctx.aria">
   <div class="panel-header-bar">
     <div class="panel-title">
-      <span class="panel-title-text" style="font-size:13px;font-weight:600;color:var(--ag-text-primary)"
-        data-i18n="panel.ctx.title">💬 当前会话上下文</span>
+      <svg class="panel-title-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <circle cx="8" cy="8" r="5.5" opacity="0.35"></circle>
+        <path d="M8 2.5A5.5 5.5 0 1 1 2.75 9.6"></path>
+      </svg>
+      <span class="panel-title-text" data-i18n="panel.ctx.title">上下文监控</span>
       <span id="v">v0.8.5</span>
     </div>
     <div class="panel-header-actions ctx-header-actions">
@@ -116,7 +119,7 @@
       </div>
       <button id="btn-github-repo-ctx" class="panel-icon-btn" type="button" aria-label="打开 GitHub 仓库"
         data-i18n-aria="header.github.aria" title="打开 GitHub 仓库" data-i18n-title="header.github.aria">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
           <path
             d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
           </path>
@@ -126,22 +129,36 @@
         data-i18n-aria="header.update.aria" title="检查插件更新" data-i18n-title="header.update.aria"
         style="position:relative">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"
-          stroke-linecap="round" stroke-linejoin="round">
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 8A6 6 0 1 1 8 2M14 2v6h-6"></path>
         </svg>
         <span id="update-badge-dot-ctx" class="update-badge-dot" style="display:none"></span>
       </button>
       <button id="btn-panel-palette" class="panel-icon-btn" type="button" aria-label="外观与调色设置"
-        data-i18n-aria="header.palette.aria" title="外观与调色设置" data-i18n-title="header.palette.aria">🎨</button>
+        data-i18n-aria="header.palette.aria" title="外观与调色设置" data-i18n-title="header.palette.aria">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.5"/><circle cx="6.2" cy="6.2" r="0.8" fill="currentColor" stroke="none"/><circle cx="9.8" cy="6.2" r="0.8" fill="currentColor" stroke="none"/><circle cx="5.8" cy="9.5" r="0.8" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
       <button id="theme-toggle" class="panel-icon-btn" type="button" aria-label="切换浅色/深色主题"
         data-i18n-aria="header.theme.aria" title="当前：跟随IDE（点击切换：浅色 / 深色 / 自动）"
-        data-i18n-title="header.theme.title">🌓</button>
-      <button id="close" class="panel-icon-btn" type="button" aria-label="收起详情"
-        data-i18n-aria="header.close.aria">×</button>
+        data-i18n-title="header.theme.title">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button id="close" class="panel-icon-btn panel-close-btn" type="button" aria-label="收起详情"
+        data-i18n-aria="header.close.aria">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
     </div>
   </div>
 
-  <div id="view-context">
+  <nav class="drawer-nav-bar" role="navigation" aria-label="侧边栏视图切换" data-i18n-aria="nav.aria">
+    <button id="nav-ctx-context" class="drawer-nav-btn active" type="button" data-drawer-nav="context" aria-current="page" data-i18n="nav.context">上下文</button>
+    <button id="nav-ctx-quota" class="drawer-nav-btn" type="button" data-drawer-nav="quota" data-i18n="nav.quota">模型额度</button>
+    <button id="nav-ctx-tokens" class="drawer-nav-btn" type="button" data-drawer-nav="tokens" data-i18n="nav.tokens">历史用量</button>
+  </nav>
+
+  <div id="view-context" class="drawer-panel-body">
     <!-- 顶部 4 分页标签栏 -->
     <div id="ctx-tabs-bar" class="ctx-tabs-bar" role="tablist" aria-label="上下文面板分页" data-i18n-aria="tabs.aria">
       <button id="tab-ctx-session" class="ctx-tab-btn active" type="button" role="tab" aria-selected="true"
@@ -167,7 +184,7 @@
 
       <!-- 卡片 1: 核心用量速览 -->
       <div id="key-summary">
-        <div class="key-header"><span class="key-title" data-i18n="session.keySummary.title">⭐ 核心用量速览</span><span
+        <div class="key-header"><span class="key-title" data-i18n="session.keySummary.title">核心用量速览</span><span
             id="key-badge" class="key-pill pill-muted" data-i18n="session.badge.reading">读取中</span></div>
         <div class="key-bar-track">
           <div id="key-bar-fill" class="key-bar-fill"></div>
@@ -190,11 +207,10 @@
       </div>
 
       <!-- 卡片 2: 输出速度与延迟速览 -->
-      <div id="speed-summary"
-        style="background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:11px 12px;margin:8px 0 10px;">
+      <div id="speed-summary">
         <div class="key-header">
           <span class="key-title" style="color:var(--ag-custom-speed,var(--ag-text-primary));"
-            data-i18n="session.speedSummary.title">⚡ 最新生成速度与耗时</span>
+            data-i18n="session.speedSummary.title">最新生成速度与耗时</span>
           <span id="speed-badge" class="key-pill pill-muted" data-i18n="session.speed.pending">待生成</span>
         </div>
         <div class="key-stats" style="grid-template-columns:repeat(4,1fr);">
@@ -238,7 +254,7 @@
       <div class="tech-drawer">
         <button id="btn-toggle-details" class="drawer-trigger" aria-expanded="false" type="button">
           <span class="drawer-trigger-left">
-            <span data-i18n="session.techDrawer.title">📋 底层技术参数与附件审计</span>
+            <span data-i18n="session.techDrawer.title">底层技术参数与附件审计</span>
           </span>
           <span id="drawer-arrow" class="drawer-arrow" data-i18n="session.techDrawer.expand">▼ 点击展开明细</span>
         </button>
@@ -656,7 +672,7 @@
                   rel="noopener noreferrer" class="unlock-author-link" role="link" tabindex="0"
                   title="点击在系统默认浏览器中打开原作者帖子" data-i18n="models.credit.author">原作者帖子 (Linux.do @23375) ↗</a>
                 <button id="btn-copy-unlock-link" class="unlock-copy-link-btn" type="button" title="复制原作者帖子链接"
-                  data-i18n="models.credit.copy">📋 复制链接</button>
+                  data-i18n="models.credit.copy">复制链接</button>
               </div>
               <span class="unlock-adapter-note" data-i18n="models.credit.adapter">本项目负责 Node.js 适配与集成</span>
             </div>
@@ -745,7 +761,7 @@
       <!-- 1. 一键推荐配置与总览（默认不自动应用，需用户预览勾选并确认） -->
       <div class="ctx-settings-card" id="enhance-preset-card">
         <div class="ctx-settings-card-hdr">
-          <div class="ctx-settings-card-title" data-i18n="enhance.preset.title">✨ 一键推荐配置（按需勾选预览）</div>
+          <div class="ctx-settings-card-title" data-i18n="enhance.preset.title">一键推荐配置（按需勾选预览）</div>
           <span id="enhance-global-badge" class="key-pill pill-muted" data-i18n="settings.common.reading">读取中…</span>
         </div>
         <div class="ctx-settings-card-desc" data-i18n="enhance.preset.desc">正常安装默认保持客户端原样。下方列出推荐增强组合；只有你勾选并确认后才会实际写入。
@@ -811,7 +827,7 @@
       <!-- 2. 客户端界面语言与品牌标题 (Antigravity 本身) -->
       <div class="ctx-settings-card" id="client-brand-lang-card">
         <div class="ctx-settings-card-hdr">
-          <div class="ctx-settings-card-title" data-i18n="settings.clientLang.title">🖥️ 客户端界面语言与品牌（Antigravity 本身）
+          <div class="ctx-settings-card-title" data-i18n="settings.clientLang.title">客户端界面语言与品牌（Antigravity 本身）
           </div>
           <span id="chinese-badge" class="key-pill pill-muted" data-i18n="settings.common.reading">读取中…</span>
         </div>
@@ -977,56 +993,10 @@
     <div id="chinese-drawer-body" style="display:none;"><span id="chinese-drawer-arrow"></span></div>
   </div>
 
-  <!-- 5. 免 TUN 网络直连 (AntigravityProxyNoTun) -->
-  <div class="tech-drawer" id="proxy-notun-drawer">
-    <button id="btn-toggle-proxy" class="drawer-trigger" aria-expanded="false" type="button">
-      <span class="drawer-trigger-left">
-        <span data-i18n="settings.proxy.title">🌐 免 TUN 网络直连（本地代理）</span>
-        <span id="proxy-badge" class="key-pill pill-muted" style="margin-left:6px;font-size:10.5px;"
-          data-i18n="settings.common.reading">读取中…</span>
-      </span>
-      <span id="proxy-drawer-arrow" class="drawer-arrow" data-i18n="drawer.expand">▼ 展开</span>
-    </button>
-    <div id="proxy-drawer-body" class="drawer-body" style="display:none;">
-      <div class="unlock-panel-content">
-        <div class="unlock-status-row">
-          <div class="unlock-status-meta">
-            <div class="unlock-label" data-i18n="settings.proxy.statusLabel">代理直连配置与状态</div>
-            <div id="proxy-status-desc" class="unlock-desc" data-i18n="settings.proxy.checking">正在核对代理设置…</div>
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin:8px 0;">
-          <label style="font-size:11px;color:var(--ag-text-secondary);display:flex;flex-direction:column;gap:4px;">
-            <span data-i18n="settings.proxy.urlLabel">本地代理地址 (例如 http://127.0.0.1:7897 或 socks5://...)：</span>
-            <input id="input-proxy-url" type="text" class="unlock-input"
-              style="padding:4px 8px;font-size:11px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:4px;"
-              value="http://127.0.0.1:7897" />
-          </label>
-          <label style="font-size:11px;color:var(--ag-text-secondary);display:flex;flex-direction:column;gap:4px;">
-            <span data-i18n="settings.proxy.bypassLabel">绕过代理列表 (NO_PROXY)：</span>
-            <input id="input-proxy-bypass" type="text" class="unlock-input"
-              style="padding:4px 8px;font-size:11px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:4px;"
-              value="localhost,127.0.0.1,::1,<local>" />
-          </label>
-        </div>
-        <div class="unlock-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button id="btn-test-proxy" class="unlock-btn unlock-btn-secondary" type="button"
-            data-i18n="settings.proxy.testBtn">🔍 测试代理连通性</button>
-          <button id="btn-save-proxy-config" class="unlock-btn unlock-btn-secondary" type="button" hidden
-            data-i18n="mod.proxy.btnSave">保存代理设置</button>
-          <button id="btn-toggle-proxy-module" class="unlock-btn unlock-btn-primary" type="button"
-            data-i18n="mod.proxy.btnEnable">开启免 TUN 直连</button>
-        </div>
-        <div id="proxy-test-result" style="font-size:11px;margin-top:6px;display:none;color:var(--ag-text-secondary);">
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 6. 面板背景与指标颜色自定义 -->
+  <!-- 5. 面板背景与指标颜色自定义 -->
   <div class="tech-drawer">
     <button id="btn-toggle-colors" class="drawer-trigger" aria-expanded="false" type="button">
-      <span class="drawer-trigger-left"><span data-i18n="settings.colors.title">🎨 指标与背景颜色自定义（默认跟随主题）</span></span>
+      <span class="drawer-trigger-left"><span data-i18n="settings.colors.title">指标与背景颜色自定义（默认跟随主题）</span></span>
       <span id="color-drawer-arrow" class="drawer-arrow" data-i18n="drawer.expandSettings">▼ 展开设置</span>
     </button>
     <div id="color-drawer-body" class="drawer-body" style="display:none;">
@@ -1139,23 +1109,20 @@
   </div>
 </section>
 
-<!-- 弹出式面板 2: Token 用量一览 (#panel-tokens, 730px) -->
-<section id="panel-tokens" class="ag-panel" hidden aria-label="Token 用量一览" data-i18n-aria="badge.tokens.aria">
+<!-- 侧边栏抽屉 2: Token 用量一览 (#panel-tokens) -->
+<section id="panel-tokens" class="ag-panel ag-panel-flex" hidden aria-label="Token 用量一览" data-i18n-aria="badge.tokens.aria">
   <div class="panel-header-bar">
     <div class="panel-title panel-title-tokens">
-      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"
-        stroke-linecap="round" stroke-linejoin="round"
-        style="color:var(--ag-custom-token-accent,var(--ag-token-accent-default))">
+      <svg class="panel-title-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M3 13V9M8 13V4M13 13V7"></path>
       </svg>
-      <span id="panel-tokens-title"
-        style="font-size:13px;font-weight:600;color:var(--ag-custom-token-accent,var(--ag-token-accent-default))"
-        data-i18n="tokens.title">本机已记录用量</span>
+      <span id="panel-tokens-title" class="panel-title-text" data-i18n="tokens.title">本机已记录用量</span>
     </div>
     <div class="panel-header-actions">
       <button id="btn-github-repo" class="panel-icon-btn" type="button" aria-label="打开 GitHub 仓库"
         data-i18n-aria="header.github.aria" title="打开 GitHub 仓库" data-i18n-title="header.github.aria">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
           <path
             d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
           </path>
@@ -1165,22 +1132,36 @@
         data-i18n-aria="header.update.aria" title="检查插件更新" data-i18n-title="header.update.aria"
         style="position:relative">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"
-          stroke-linecap="round" stroke-linejoin="round">
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 8A6 6 0 1 1 8 2M14 2v6h-6"></path>
         </svg>
         <span id="update-badge-dot" class="update-badge-dot" style="display:none"></span>
       </button>
       <button id="btn-panel-tokens-palette" class="panel-icon-btn" type="button" aria-label="外观与调色设置"
-        data-i18n-aria="header.palette.aria" title="外观与调色设置" data-i18n-title="header.palette.aria">🎨</button>
+        data-i18n-aria="header.palette.aria" title="外观与调色设置" data-i18n-title="header.palette.aria">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.5"/><circle cx="6.2" cy="6.2" r="0.8" fill="currentColor" stroke="none"/><circle cx="9.8" cy="6.2" r="0.8" fill="currentColor" stroke="none"/><circle cx="5.8" cy="9.5" r="0.8" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
       <button id="theme-toggle-tokens" class="panel-icon-btn" type="button" aria-label="切换浅色/深色主题"
         data-i18n-aria="header.theme.aria" title="当前：跟随IDE（点击切换：浅色 / 深色 / 自动）"
-        data-i18n-title="header.theme.title">🌓</button>
-      <button id="close-tokens" class="panel-icon-btn" type="button" aria-label="收起详情"
-        data-i18n-aria="header.close.aria">×</button>
+        data-i18n-title="header.theme.title">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button id="close-tokens" class="panel-icon-btn panel-close-btn" type="button" aria-label="收起详情"
+        data-i18n-aria="header.close.aria">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
     </div>
   </div>
 
-  <div id="view-tokens">
+  <nav class="drawer-nav-bar" role="navigation" aria-label="侧边栏视图切换" data-i18n-aria="nav.aria">
+    <button id="nav-tok-context" class="drawer-nav-btn" type="button" data-drawer-nav="context" data-i18n="nav.context">上下文</button>
+    <button id="nav-tok-quota" class="drawer-nav-btn" type="button" data-drawer-nav="quota" data-i18n="nav.quota">模型额度</button>
+    <button id="nav-tok-tokens" class="drawer-nav-btn active" type="button" data-drawer-nav="tokens" aria-current="page" data-i18n="nav.tokens">历史用量</button>
+  </nav>
+
+  <div id="view-tokens" class="drawer-panel-body">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
       <div class="source-switch-bar">
         <span style="font-size:10.5px;color:var(--ag-text-muted);padding:0 4px"
@@ -1199,7 +1180,9 @@
     <!-- 账号套餐状态摘要行 -->
     <div id="plan-summary-bar" class="plan-summary-bar">
       <div class="plan-summary-badge" style="display:flex;align-items:center;gap:6px;flex:1;overflow:hidden">
-        <span>💎</span>
+        <svg class="plan-tier-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4.5 3h7l2.5 3.5L8 13 2 6.5 4.5 3z"/>
+        </svg>
         <span id="plan-summary-text" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pro · ...</span>
       </div>
       <!-- 黄框位置：实时联动的订阅费与汇率胶囊 -->
@@ -1217,8 +1200,7 @@
       <div
         style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--ag-border-subcard)">
         <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:11.5px;font-weight:600;color:var(--ag-text-primary)" data-i18n="plan.detail.title">💎
-            AI 订阅与额度详情</span>
+          <span style="font-size:11.5px;font-weight:600;color:var(--ag-text-primary)" data-i18n="plan.detail.title">AI 订阅与额度详情</span>
           <span id="plan-save-feedback" style="font-size:10px;color:var(--ag-text-muted);display:none"></span>
         </div>
         <button id="btn-plan-detail-collapse-top" class="switch-pill-btn" type="button"
@@ -1256,7 +1238,7 @@
             <div id="direct-country-trigger" class="ag-dropdown-trigger" tabindex="0"
               title="用户记录或可靠来源识别的 Google 账号所属地区 (仅本地生效，不修改 Google 账号本身)" data-i18n-title="plan.country.title">
               <span id="direct-country-label" class="ag-dropdown-label"
-                style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" data-i18n="plan.country.auto">🌐 未设置 /
+                style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" data-i18n="plan.country.auto">未设置 /
                 自动</span>
               <div class="ag-dropdown-arrow">
                 <svg viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.5"
@@ -1593,12 +1575,12 @@
           style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--ag-border-subcard)">
           <span style="font-size:10.5px;color:var(--ag-text-muted)" data-i18n="cost.modeLabel">估值模式:</span>
           <div class="source-switch-bar">
-            <button id="cost-btn-mode-ref" class="switch-pill-btn active" type="button"
-              style="padding:1px 6px;font-size:10px" data-i18n="cost.modeRef">参考模型估算</button>
-            <button id="cost-btn-mode-hybrid" class="switch-pill-btn" type="button"
-              style="padding:1px 6px;font-size:10px" data-i18n="cost.modeHybrid">混合模式</button>
+            <button id="cost-btn-mode-hybrid" class="switch-pill-btn active" type="button"
+              style="padding:1px 6px;font-size:10px" data-i18n="cost.modeHybrid">各模型官方价</button>
             <button id="cost-btn-mode-identified" class="switch-pill-btn" type="button"
               style="padding:1px 6px;font-size:10px" data-i18n="cost.modeIdentified">仅已识别模型</button>
+            <button id="cost-btn-mode-ref" class="switch-pill-btn" type="button"
+              style="padding:1px 6px;font-size:10px" data-i18n="cost.modeRef">单模型基准估算</button>
           </div>
         </div>
 
@@ -1614,19 +1596,19 @@
           style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
           <div class="t-card" style="padding:6px">
             <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.input">输入 Token</span>
-              ($0.75/M)</div>
+              <span id="ref-cost-input-rate">($0.75/M)</span></div>
             <div id="ref-cost-input-val" style="font-size:12px;font-weight:600;color:var(--ag-text-primary)">$0.00</div>
             <div id="ref-cost-input-tok" style="font-size:9.5px;color:var(--ag-text-muted)">0 tok</div>
           </div>
           <div class="t-card" style="padding:6px">
             <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.cache">缓存读取 (优惠)</span>
-              ($0.075/M)</div>
+              <span id="ref-cost-cache-rate">($0.075/M)</span></div>
             <div id="ref-cost-cache-val" style="font-size:12px;font-weight:600;color:var(--ag-text-primary)">$0.00</div>
             <div id="ref-cost-cache-tok" style="font-size:9.5px;color:var(--ag-text-muted)">0 tok</div>
           </div>
           <div class="t-card" style="padding:6px">
             <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.output">输出 Token</span>
-              ($3.75/M)</div>
+              <span id="ref-cost-output-rate">($3.75/M)</span></div>
             <div id="ref-cost-output-val" style="font-size:12px;font-weight:600;color:var(--ag-text-primary)">$0.00
             </div>
             <div id="ref-cost-output-tok" style="font-size:9.5px;color:var(--ag-text-muted)">0 tok</div>
@@ -1656,7 +1638,7 @@
       <!-- 隐藏辅助兼容层 -->
       <div id="ref-cost-drawer-body" style="display:none">
         <span id="ref-cost-grand-val">$0.00</span>
-        <span id="ref-cost-mode-label">参考模型折算</span>
+        <span id="ref-cost-mode-label">各模型官方价</span>
         <button id="btn-toggle-ref-cost-drawer" type="button" style="display:none"></button>
         <button id="btn-ref-mode-all" type="button" style="display:none"></button>
         <button id="btn-ref-mode-hybrid" type="button" style="display:none"></button>
@@ -1800,7 +1782,7 @@
       <!-- 二级交互折叠区（就近放置于面板 A 内部）：面板背景色 + 热力图 5 档色阶预设、5 档逐格独立自定义与两端插值自定义 -->
       <div class="tech-drawer" style="margin-top:2px">
         <button id="btn-toggle-token-colors" class="drawer-trigger" aria-expanded="false" type="button">
-          <span class="drawer-trigger-left"><span data-i18n="tokens.colors.title">🎨 热力图色阶与面板外观自定义（默认跟随主题）</span></span>
+          <span class="drawer-trigger-left"><span data-i18n="tokens.colors.title">热力图色阶与面板外观自定义（默认跟随主题）</span></span>
           <span id="token-color-drawer-arrow" class="drawer-arrow" data-i18n="drawer.expandSettings">▼ 展开设置</span>
         </button>
         <div id="token-color-drawer-body" class="drawer-body" style="display:none;">
@@ -1972,7 +1954,7 @@
 <div id="color-picker-popover" hidden role="dialog" aria-label="颜色选取器" data-i18n-aria="cp.title">
   <div class="cp-header">
     <div class="cp-title">
-      <span data-i18n="cp.title">🎨 颜色选取器</span>
+      <span data-i18n="cp.title">颜色选取器</span>
       <span id="cp-target-name" class="cp-target-lbl"></span>
     </div>
     <button id="cp-close" class="panel-icon-btn" type="button" aria-label="关闭颜色选取器"
@@ -1980,7 +1962,7 @@
   </div>
   <div class="cp-toolbar">
     <button id="cp-eyedropper" class="cp-eyedropper-btn" type="button" title="从屏幕吸取颜色"
-      data-i18n-title="cp.eyedropperTitle" data-i18n="cp.eyedropper">🖊 取色</button>
+      data-i18n-title="cp.eyedropperTitle" data-i18n="cp.eyedropper">取色</button>
     <div class="cp-presets" id="cp-presets">
       <button class="cp-preset-dot" type="button" data-cp-hex="#ef4444" style="background:#ef4444"
         title="#EF4444"></button>
@@ -2012,7 +1994,7 @@
       <span class="cp-fmt-lbl">HEX</span>
       <input id="cp-input-hex" class="cp-fmt-input" type="text" value="#652ab7" spellcheck="false" aria-label="HEX 色值输入"
         data-i18n-aria="cp.hexAria" />
-      <button id="cp-copy-hex" class="cp-copy-btn" type="button" title="复制 HEX" data-i18n-title="cp.copyHex">📋</button>
+      <button id="cp-copy-hex" class="cp-copy-btn" type="button" title="复制 HEX" data-i18n-title="cp.copyHex"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M11 3H4a1 1 0 0 0-1 1v7"/></svg></button>
     </div>
     <details class="cp-advanced-formats">
       <summary class="cp-fmt-summary" data-i18n="cp.moreFormats">更多格式 (RGB / HSL)</summary>
@@ -2022,14 +2004,14 @@
           <input id="cp-input-rgb" class="cp-fmt-input" type="text" value="rgb(101, 42, 183)" spellcheck="false"
             aria-label="RGB 色值输入" data-i18n-aria="cp.rgbAria" />
           <button id="cp-copy-rgb" class="cp-copy-btn" type="button" title="复制 RGB"
-            data-i18n-title="cp.copyRgb">📋</button>
+            data-i18n-title="cp.copyRgb"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M11 3H4a1 1 0 0 0-1 1v7"/></svg></button>
         </div>
         <div class="cp-row">
           <span class="cp-fmt-lbl">HSL</span>
           <input id="cp-input-hsl" class="cp-fmt-input" type="text" value="hsl(265, 63%, 44%)" spellcheck="false"
             aria-label="HSL 色值输入" data-i18n-aria="cp.hslAria" />
           <button id="cp-copy-hsl" class="cp-copy-btn" type="button" title="复制 HSL"
-            data-i18n-title="cp.copyHsl">📋</button>
+            data-i18n-title="cp.copyHsl"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M11 3H4a1 1 0 0 0-1 1v7"/></svg></button>
         </div>
       </div>
     </details>
@@ -2047,7 +2029,7 @@
   <div class="update-pop-hdr">
     <div style="display:flex;align-items:center;gap:6px">
       <span id="up-pop-title" style="font-weight:600;font-size:12px;color:var(--ag-text-primary)"
-        data-i18n="update.title">🚀 检查更新</span>
+        data-i18n="update.title">检查更新</span>
       <span id="up-pop-ver" class="key-pill pill-good" style="font-size:10px">v0.8.5</span>
     </div>
     <button id="btn-close-update-pop" class="panel-icon-btn" type="button"
@@ -2075,26 +2057,43 @@
   <div class="pop-det" id="heat-pop-det"></div>
 </div>
 
-<!-- 弹出式面板 3: 模型额度看板 (#panel-quota, 460px) -->
+<!-- 侧边栏抽屉 3: 模型额度看板 (#panel-quota) -->
 <section id="panel-quota" class="ag-panel ag-panel-flex" hidden aria-label="模型额度看板" data-i18n-aria="quota.panel.aria">
   <div class="panel-header-bar">
     <div class="panel-title">
-      <span class="panel-title-text" style="font-size:13px;font-weight:600;color:var(--ag-text-primary)"
-        data-i18n="quota.panel.title">◔ 模型额度看板</span>
-      <span id="quota-plan-tier-pill" class="key-pill pill-muted" hidden></span>
+      <svg class="panel-title-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <circle cx="8" cy="8" r="5.5" opacity="0.35"></circle>
+        <path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" stroke-linecap="round"></path>
+        <path d="M8 8V4.8" stroke-linecap="round"></path>
+      </svg>
+      <span class="panel-title-text" data-i18n="quota.panel.title">模型额度</span>
+      <span id="quota-plan-tier-pill" class="quota-tier-badge" hidden></span>
     </div>
     <div class="panel-header-actions">
       <span id="quota-refresh-feedback" class="quota-refresh-feedback" hidden
         data-i18n="quota.refresh.upToDate">已更新</span>
       <button id="btn-quota-refresh" class="panel-icon-btn quota-refresh-btn" type="button" aria-label="手动刷新模型额度"
         data-i18n-aria="quota.refresh.aria" title="手动刷新模型额度" data-i18n-title="quota.refresh.aria">
-        <span class="quota-refresh-icon" aria-hidden="true">↻</span>
+        <span class="quota-refresh-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.35-3.6"/><path d="M13.5 2.5v3.2h-3.2"/></svg></span>
         <span id="quota-refresh-text" data-i18n="quota.refresh.btn">刷新</span>
       </button>
-      <button id="close-quota" class="panel-icon-btn" type="button" aria-label="收起详情"
-        data-i18n-aria="header.close.aria">×</button>
+      <button id="theme-toggle-quota" class="panel-icon-btn" type="button" aria-label="切换浅色/深色主题"
+        data-i18n-aria="header.theme.aria" title="当前：跟随IDE（点击切换：浅色 / 深色 / 自动）"
+        data-i18n-title="header.theme.title">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button id="close-quota" class="panel-icon-btn panel-close-btn" type="button" aria-label="收起详情"
+        data-i18n-aria="header.close.aria">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
     </div>
   </div>
+
+  <nav class="drawer-nav-bar" role="navigation" aria-label="侧边栏视图切换" data-i18n-aria="nav.aria">
+    <button id="nav-quo-context" class="drawer-nav-btn" type="button" data-drawer-nav="context" data-i18n="nav.context">上下文</button>
+    <button id="nav-quo-quota" class="drawer-nav-btn active" type="button" data-drawer-nav="quota" aria-current="page" data-i18n="nav.quota">模型额度</button>
+    <button id="nav-quo-tokens" class="drawer-nav-btn" type="button" data-drawer-nav="tokens" data-i18n="nav.tokens">历史用量</button>
+  </nav>
 
   <div id="view-quota" class="quota-panel-body">
     <div id="quota-banner" class="quota-banner" hidden>
@@ -2145,7 +2144,6 @@
 
     <div id="quota-basis-note" class="quota-basis-note" data-i18n="quota.basisNote">百分比与重置时间来自宿主接口；「约剩余
       Token」按本机输入+缓存+输出原始 Token 统计，受服务端计费权重、同池模型混用、他端消耗及周期采样覆盖度影响；校准过期或样本不足时不按有效推算展示。</div>
-    <div id="quota-usage-tip" class="quota-usage-tip" data-i18n="quota.usageTip">💡
-      用量提示：使用前可先查看各池剩余额度，优先选择余量充足且适合当前任务的模型。</div>
+    <div id="quota-usage-tip" class="quota-usage-tip" data-i18n="quota.usageTip">提示：使用前可先查看各池剩余额度，优先选择余量充足且适合当前任务的模型。</div>
   </div>
 </section>

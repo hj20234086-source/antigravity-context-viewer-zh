@@ -3683,3 +3683,78 @@ test('ELV-83: parseUserPlanStatus、resolveEffectivePlanStatus 与严格 allowed
   assert.equal(unknownPlanSnap.activeStatus, 'unknown');
   assert.equal(unknownPlanSnap.pools[0]?.noPermission, false);
 });
+
+test('per-model official API pricing: summarizeApiCost.byCategoryCost & getDailyModelCost hybrid/identified accuracy', () => {
+  const { normalizeTokenHistoryPayload } = require('./meter-core');
+
+  // 1. 多模型真实调用汇总：Gemini 4 Hydrogen ($1.50/$0.075/$7.50) + Claude Opus 5.5 ($4.00/$0.20/$20.00)
+  const summary = summarizeApiCost([
+    {
+      model: 'gemini-4-hydrogen',
+      inputTokens: 1000000,
+      cacheReadTokens: 2000000,
+      outputTokens: 500000,
+      date: '2026-11-12'
+    },
+    {
+      model: 'claude-opus-5-5',
+      inputTokens: 500000,
+      cacheReadTokens: 1000000,
+      outputTokens: 200000,
+      date: '2026-11-12'
+    }
+  ]);
+
+  // Hydrogen: in $1.50 + ca $0.15 + out $3.75 = $5.40
+  // Opus 5.5: in $2.00 + ca $0.20 + out $4.00 = $6.20
+  assert.equal(summary.pricedCostUSD, 11.6);
+  assert.deepEqual(summary.byCategoryCost, {
+    inputCostUSD: 3.5,
+    cacheCostUSD: 0.35,
+    outputCostUSD: 7.75
+  });
+  assert.equal(summary.byModel['gemini-4-hydrogen'].displayName, 'Gemini 4 Hydrogen');
+  assert.equal(summary.byModel['gemini-4-hydrogen'].tierRates.inputPerMillion, 1.5);
+  assert.equal(summary.byModel['claude-opus-5-5'].displayName, 'Claude Opus 5.5');
+  assert.equal(summary.byModel['claude-opus-5-5'].tierRates.outputPerMillion, 20);
+
+  // 2. getDailyModelCost & calculateIntervalCost 在 hybrid 模式下应按已知模型官方价 + 未标明残差按 3.8 Flash 兜底（绝不混同或双计）
+  const dayRec = {
+    input: 2000000,
+    cache: 2000000,
+    output: 600000,
+    total: 4600000,
+    steps: 4,
+    knownInput: 1000000,
+    knownCache: 2000000,
+    knownOutput: 500000,
+    knownCostUSD: 5.4,
+    knownInputCostUSD: 1.5,
+    knownCacheCostUSD: 0.15,
+    knownOutputCostUSD: 3.75
+  };
+  // residual: input 1M ($0.75) + cache 0 ($0) + output 100K ($0.375) = $1.125 -> combined = 5.4 + 1.125 = 6.525
+  const hybridDay = getDailyModelCost(dayRec, '2026-11-12', 'gemini-3.8-flash', { mode: 'hybrid' });
+  assert.equal(hybridDay.costUSD, 6.525);
+  assert.equal(hybridDay.inputCost, 2.25);
+  assert.equal(hybridDay.cacheCost, 0.15);
+  assert.equal(hybridDay.outputCost, 4.125);
+
+  const identifiedDay = getDailyModelCost(dayRec, '2026-11-12', 'gemini-3.8-flash', { mode: 'identified' });
+  assert.equal(identifiedDay.costUSD, 5.4);
+  assert.equal(identifiedDay.inputCost, 1.5);
+  assert.equal(identifiedDay.cacheCost, 0.15);
+  assert.equal(identifiedDay.outputCost, 3.75);
+
+  // ref 基准模式仍全量按单一参考模型 3.8 Flash 折算
+  const refDay = getDailyModelCost(dayRec, '2026-11-12', 'gemini-3.8-flash', { mode: 'ref', pricingDate: '2026-11-08' });
+  // 2M*0.75 + 2M*0.075 + 0.6M*3.75 = 1.5 + 0.15 + 2.25 = 3.9
+  assert.equal(refDay.costUSD, 3.9);
+
+  // normalizeTokenHistoryPayload 必须透传 known* 字段供热力图使用
+  const norm = normalizeTokenHistoryPayload({
+    dailyMap: { '2026-11-12': dayRec }
+  }, { todayStr: '2026-11-12' });
+  assert.equal(norm.dailyMap['2026-11-12'].knownCostUSD, 5.4);
+  assert.equal(norm.dailyMap['2026-11-12'].knownOutputCostUSD, 3.75);
+});

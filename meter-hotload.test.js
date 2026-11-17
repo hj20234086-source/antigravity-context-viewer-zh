@@ -170,6 +170,10 @@ function createHotloadDomSandbox({ fetchImpl = null, contextMeterAPI = null, liv
         const fns = listeners.get(el)?.get('click');
         if (fns) for (const fn of fns) fn({ target: el, preventDefault() { }, stopPropagation() { } });
       },
+      trigger(type, ev = {}) {
+        const fns = listeners.get(el)?.get(type);
+        if (fns) for (const fn of fns) fn({ target: el, preventDefault() { }, stopPropagation() { }, ...ev });
+      },
       querySelector() { return null; },
       querySelectorAll(sel) {
         if (sel === '#ag-context-meter') {
@@ -198,8 +202,7 @@ function createHotloadDomSandbox({ fetchImpl = null, contextMeterAPI = null, liv
       'tab-ctx-session', 'tab-ctx-models', 'tab-ctx-speed', 'tab-ctx-settings',
       'pane-ctx-session', 'pane-ctx-models', 'pane-ctx-speed', 'pane-ctx-settings',
       'ctx-model-list', 'ctx-custom-limit-input',
-      'input-proxy-url', 'input-proxy-bypass', 'btn-save-proxy-config', 'btn-toggle-proxy-module',
-      'proxy-status-desc', 'proxy-test-result', 'chk-enhance-chinese-title', 'btn-enhance-preset-apply',
+      'chk-enhance-chinese-title', 'btn-enhance-preset-apply',
       'btn-apply-update', 'btn-update-restart', 'btn-check-update', 'btn-check-update-ctx',
       'btn-close-update-pop', 'btn-update-later', 'btn-view-release-page',
       'up-pop-title', 'up-pop-body', 'up-pop-ver', 'up-pop-status',
@@ -696,7 +699,7 @@ test('热加载 3：重复热注入保持幂等、彻底清理旧定时器、无
     const firstInstance = h.sandbox.__AGContextMeter;
     assert.equal(firstInstance.isDisposedForTest(), false);
 
-    // 模拟用户在热加载瞬间已打开模型设置列表、滚动到 240px，且修改了代理 URL 草稿尚未点保存
+    // 模拟用户在热加载瞬间已打开模型设置列表、滚动到 240px，且修改了自定义上下文草稿尚未点保存
     h.sandbox.__AGContextMeter.showQuotaPanelForTest(false);
     const pCtx = h.shadowElements.get('panel');
     pCtx.hidden = false;
@@ -705,10 +708,9 @@ test('热加载 3：重复热注入保持幂等、彻底清理旧定时器、无
     const listEl = h.shadowElements.get('ctx-model-list');
     listEl.scrollTop = 240;
 
-    const proxyInput = h.shadowElements.get('input-proxy-url');
-    proxyInput.value = 'http://127.0.0.1:7899';
-    const saveProxyBtn = h.shadowElements.get('btn-save-proxy-config');
-    saveProxyBtn.hidden = false;
+    const customInput = h.shadowElements.get('ctx-custom-limit-input');
+    customInput.value = '524288';
+    customInput.trigger('input');
 
     const intervalsBefore = h.getActiveIntervalCount();
     assert.equal(intervalsBefore, 1, '单实例只应有 1 个主轮询定时器');
@@ -725,7 +727,7 @@ test('热加载 3：重复热注入保持幂等、彻底清理旧定时器、无
 
     assert.equal(h.getActiveIntervalCount(), 1, '连续热注入 3 次后活跃定时器必须仍仅为 1，零泄漏叠加');
     assert.ok(h.getClearedIntervalCount() >= 2, '旧实例定时器必须全部 clearInterval');
-    assert.equal(h.shadowElements.get('input-proxy-url').value, 'http://127.0.0.1:7899', '未保存的代理草稿必须保留');
+    assert.equal(h.shadowElements.get('ctx-custom-limit-input').value, '524288', '未保存的自定义上下文草稿必须保留');
     assert.equal(h.shadowElements.get('ctx-model-list').scrollTop, 240, '列表 scrollTop 滚动位置必须保留');
     assert.equal(h.shadowElements.get('panel').hidden, false, '正在查看的面板打开状态必须保留');
   } finally {

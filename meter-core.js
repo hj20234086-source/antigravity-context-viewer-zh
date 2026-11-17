@@ -1328,6 +1328,18 @@
     return result;
   }
 
+  const MODEL_DISPLAY_NAMES = {
+    'gemini-3.8-flash': 'Gemini 3.8 Flash Standard',
+    'gemini-4-hydrogen': 'Gemini 4 Hydrogen',
+    'gemini-4-carbon': 'Gemini 4 Carbon',
+    'gemini-4-argon': 'Gemini 4 Argon',
+    'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview',
+    'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'claude-opus-5-5': 'Claude Opus 5.5',
+    'claude-sonnet-5-5': 'Claude Sonnet 5.5'
+  };
+
   function calculateRequestApiCost(req) {
     if (!req) return { costUSD: null, isPriced: false, reason: '缺失请求数据' };
     const rawModel = extractModelString(req);
@@ -1383,6 +1395,9 @@
 
     return {
       costUSD: Number(totalCost.toFixed(6)),
+      inputCostUSD: Number(costInput.toFixed(6)),
+      cacheCostUSD: Number(costCache.toFixed(6)),
+      outputCostUSD: Number(costOutput.toFixed(6)),
       isPriced: true,
       modelKey,
       matchedTier,
@@ -1397,6 +1412,9 @@
 
   function summarizeApiCost(requests = [], extraUnpricedCount = 0, extraUnpricedReasons = {}, extraUnpricedTokens = 0) {
     let pricedCostUSD = 0;
+    let pricedInputCostUSD = 0;
+    let pricedCacheCostUSD = 0;
+    let pricedOutputCostUSD = 0;
     let pricedTokens = 0;
     let pricedInputTokens = 0;
     let pricedCacheTokens = 0;
@@ -1416,6 +1434,9 @@
       const calc = calculateRequestApiCost(req);
       if (calc.isPriced) {
         pricedCostUSD += calc.costUSD;
+        pricedInputCostUSD += (calc.inputCostUSD || 0);
+        pricedCacheCostUSD += (calc.cacheCostUSD || 0);
+        pricedOutputCostUSD += (calc.outputCostUSD || 0);
         pricedTokens += calc.totalTokens;
         pricedInputTokens += (calc.inputTokens || 0);
         pricedCacheTokens += (calc.cacheTokens || 0);
@@ -1423,11 +1444,34 @@
         pricedThinkingTokens += (calc.thinkingTokens || 0);
         pricedRequestsCount += 1;
         if (!byModel[calc.modelKey]) {
-          byModel[calc.modelKey] = { requests: 0, costUSD: 0, tokens: 0 };
+          byModel[calc.modelKey] = {
+            requests: 0,
+            costUSD: 0,
+            tokens: 0,
+            inputTokens: 0,
+            cacheTokens: 0,
+            outputTokens: 0,
+            inputCostUSD: 0,
+            cacheCostUSD: 0,
+            outputCostUSD: 0,
+            displayName: MODEL_DISPLAY_NAMES[calc.modelKey] || calc.modelKey,
+            tierRates: calc.matchedTier ? {
+              inputPerMillion: calc.matchedTier.inputPerMillion,
+              cacheReadPerMillion: calc.matchedTier.cacheReadPerMillion,
+              outputPerMillion: calc.matchedTier.outputPerMillion
+            } : null
+          };
         }
-        byModel[calc.modelKey].requests += 1;
-        byModel[calc.modelKey].costUSD = Number((byModel[calc.modelKey].costUSD + calc.costUSD).toFixed(6));
-        byModel[calc.modelKey].tokens += calc.totalTokens;
+        const bm = byModel[calc.modelKey];
+        bm.requests += 1;
+        bm.costUSD = Number((bm.costUSD + calc.costUSD).toFixed(6));
+        bm.tokens += calc.totalTokens;
+        bm.inputTokens += (calc.inputTokens || 0);
+        bm.cacheTokens += (calc.cacheTokens || 0);
+        bm.outputTokens += (calc.outputTokens || 0);
+        bm.inputCostUSD = Number((bm.inputCostUSD + (calc.inputCostUSD || 0)).toFixed(6));
+        bm.cacheCostUSD = Number((bm.cacheCostUSD + (calc.cacheCostUSD || 0)).toFixed(6));
+        bm.outputCostUSD = Number((bm.outputCostUSD + (calc.outputCostUSD || 0)).toFixed(6));
       } else {
         unpricedRequestsCount += 1;
         const inp = Number(req.inputTokens ?? req.input_tokens ?? req.input ?? 0);
@@ -1484,6 +1528,11 @@
         cacheTokens: pricedCacheTokens,
         outputTokens: pricedOutputTokens,
         thinkingTokens: pricedThinkingTokens
+      },
+      byCategoryCost: {
+        inputCostUSD: Number((Math.round((pricedInputCostUSD + Number.EPSILON) * 10000) / 10000).toFixed(4)),
+        cacheCostUSD: Number((Math.round((pricedCacheCostUSD + Number.EPSILON) * 10000) / 10000).toFixed(4)),
+        outputCostUSD: Number((Math.round((pricedOutputCostUSD + Number.EPSILON) * 10000) / 10000).toFixed(4))
       },
       coveragePercent,
       tokenCoveragePercent,
@@ -1878,21 +1927,9 @@
       };
     }
 
-    const modelNameMap = {
-      'gemini-3.8-flash': 'Gemini 3.8 Flash Standard',
-      'gemini-4-hydrogen': 'Gemini 4 Hydrogen',
-      'gemini-4-carbon': 'Gemini 4 Carbon',
-      'gemini-4-argon': 'Gemini 4 Argon',
-      'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview',
-      'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite',
-      'gemini-2.5-pro': 'Gemini 2.5 Pro',
-      'claude-opus-5-5': 'Claude Opus 5.5',
-      'claude-sonnet-5-5': 'Claude Sonnet 5.5'
-    };
-
     return {
       modelKey: normKey,
-      modelDisplayName: modelNameMap[normKey] || normKey,
+      modelDisplayName: MODEL_DISPLAY_NAMES[normKey] || normKey,
       pricingDate: reqDate,
       matchedTier,
       hasBreakdown,
@@ -2472,13 +2509,28 @@
     const normalizedMap = {};
     for (const [k, rec] of Object.entries(targetMap)) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !rec) continue;
-      normalizedMap[k] = {
+      const item = {
         total: Number(rec.total) || 0,
         input: Number(rec.input) || 0,
         output: Number(rec.output) || 0,
         cache: Number(rec.cache) || 0,
         steps: Number(rec.steps) || 0
       };
+      if (
+        Number(rec.knownCostUSD) > 0 ||
+        Number(rec.knownInput) > 0 ||
+        Number(rec.knownCache) > 0 ||
+        Number(rec.knownOutput) > 0
+      ) {
+        item.knownCostUSD = Number(rec.knownCostUSD) || 0;
+        item.knownInput = Number(rec.knownInput) || 0;
+        item.knownCache = Number(rec.knownCache) || 0;
+        item.knownOutput = Number(rec.knownOutput) || 0;
+        item.knownInputCostUSD = Number(rec.knownInputCostUSD) || 0;
+        item.knownCacheCostUSD = Number(rec.knownCacheCostUSD) || 0;
+        item.knownOutputCostUSD = Number(rec.knownOutputCostUSD) || 0;
+      }
+      normalizedMap[k] = item;
     }
 
     const todayStr = options.todayStr || (new Date()).toISOString().slice(0, 10);
@@ -2654,27 +2706,69 @@
     }
     const mode = options.mode || 'ref';
     const pricingDate = options.pricingDate ? String(options.pricingDate).slice(0, 10) : '2026-11-08';
-    const cacheKey = `${dateKey}:${modelKey}:${mode}:${pricingDate}:${dayRecord.input || 0}:${dayRecord.cache || 0}:${dayRecord.output || 0}:${dayRecord.total || 0}`;
+    const knownCostUSD = Number(dayRecord.knownCostUSD) || 0;
+    const knownInput = Number(dayRecord.knownInput) || 0;
+    const knownCache = Number(dayRecord.knownCache) || 0;
+    const knownOutput = Number(dayRecord.knownOutput) || 0;
+    const knownInputCostUSD = Number(dayRecord.knownInputCostUSD) || 0;
+    const knownCacheCostUSD = Number(dayRecord.knownCacheCostUSD) || 0;
+    const knownOutputCostUSD = Number(dayRecord.knownOutputCostUSD) || 0;
+    const hasKnownUsage = knownCostUSD > 0 || knownInput > 0 || knownCache > 0 || knownOutput > 0;
+    const cacheKey = `${dateKey}:${modelKey}:${mode}:${pricingDate}:${dayRecord.input || 0}:${dayRecord.cache || 0}:${dayRecord.output || 0}:${dayRecord.total || 0}:${knownCostUSD}:${knownInput}:${knownCache}:${knownOutput}`;
     if (_dailyCostCache.has(cacheKey)) {
       return _dailyCostCache.get(cacheKey);
     }
 
-    const calc = calculateReferenceModelCost({
-      inputTokens: dayRecord.input || 0,
-      cacheTokens: dayRecord.cache || 0,
-      outputTokens: dayRecord.output || 0,
-      totalTokens: dayRecord.total || 0
-    }, modelKey, {
-      pricingDate,
-      mode: mode === 'hybrid' ? 'unpriced_only' : undefined
-    });
-
-    const res = {
-      costUSD: calc.totalCostUSD || 0,
-      inputCost: calc.inputCostUSD ?? calc.breakdownCostUSD?.input ?? 0,
-      cacheCost: calc.cacheCostUSD ?? calc.breakdownCostUSD?.cache ?? 0,
-      outputCost: calc.outputCostUSD ?? calc.breakdownCostUSD?.output ?? 0
-    };
+    let res;
+    if (mode === 'identified') {
+      res = hasKnownUsage
+        ? {
+            costUSD: Number(knownCostUSD.toFixed(6)),
+            inputCost: Number(knownInputCostUSD.toFixed(6)),
+            cacheCost: Number(knownCacheCostUSD.toFixed(6)),
+            outputCost: Number(knownOutputCostUSD.toFixed(6))
+          }
+        : { costUSD: 0, inputCost: 0, cacheCost: 0, outputCost: 0 };
+    } else if (mode === 'hybrid' && hasKnownUsage) {
+      const calc = calculateReferenceModelCost({
+        inputTokens: dayRecord.input || 0,
+        cacheTokens: dayRecord.cache || 0,
+        outputTokens: dayRecord.output || 0,
+        totalTokens: dayRecord.total || 0
+      }, modelKey, {
+        pricingDate,
+        mode: 'unpriced_only',
+        knownUsage: {
+          inputTokens: knownInput,
+          cacheTokens: knownCache,
+          outputTokens: knownOutput,
+          costUSD: knownCostUSD
+        }
+      });
+      const resBd = calc.hybrid?.residualTokensBreakdown || {};
+      res = {
+        costUSD: calc.hybrid ? calc.hybrid.combinedTotalUSD : (calc.totalCostUSD || 0),
+        inputCost: Number((knownInputCostUSD + (resBd.inputCostUSD || 0)).toFixed(4)),
+        cacheCost: Number((knownCacheCostUSD + (resBd.cacheCostUSD || 0)).toFixed(4)),
+        outputCost: Number((knownOutputCostUSD + (resBd.outputCostUSD || 0)).toFixed(4))
+      };
+    } else {
+      const calc = calculateReferenceModelCost({
+        inputTokens: dayRecord.input || 0,
+        cacheTokens: dayRecord.cache || 0,
+        outputTokens: dayRecord.output || 0,
+        totalTokens: dayRecord.total || 0
+      }, modelKey, {
+        pricingDate,
+        mode: mode === 'hybrid' ? 'unpriced_only' : undefined
+      });
+      res = {
+        costUSD: calc.totalCostUSD || 0,
+        inputCost: calc.inputCostUSD ?? calc.breakdownCostUSD?.input ?? 0,
+        cacheCost: calc.cacheCostUSD ?? calc.breakdownCostUSD?.cache ?? 0,
+        outputCost: calc.outputCostUSD ?? calc.breakdownCostUSD?.output ?? 0
+      };
+    }
     _dailyCostCache.set(cacheKey, res);
     return res;
   }
@@ -3878,6 +3972,7 @@
     analyzeSteps,
     parseDurationSec,
     GEMINI_PRICING_TABLE,
+    MODEL_DISPLAY_NAMES,
     SUBSCRIPTION_ACQUISITION_PRESETS,
     SUBSCRIPTION_REGIONS_PRESET,
     findRegionPreset,

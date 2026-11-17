@@ -30,13 +30,12 @@
         const openDrawers = [];
         for (const btnId of [
           'btn-toggle-details', 'btn-toggle-card-details', 'btn-toggle-unlock-details',
-          'btn-toggle-enhance-details', 'btn-toggle-proxy', 'btn-toggle-colors', 'btn-toggle-token-colors'
+          'btn-toggle-enhance-details', 'btn-toggle-colors', 'btn-toggle-token-colors'
         ]) {
           if (prevRoot.getElementById(btnId)?.getAttribute?.('aria-expanded') === 'true') {
             openDrawers.push(btnId);
           }
         }
-        const proxySaveBtn = prevRoot.getElementById('btn-save-proxy-config');
         const enhanceSaveBtn = prevRoot.getElementById('btn-enhance-preset-apply');
         inheritedHotReloadState = {
           capturedAt: Date.now(),
@@ -46,9 +45,6 @@
           scrollTops,
           openDrawers,
           drafts: {
-            proxyInputDirty: Boolean(proxySaveBtn && !proxySaveBtn.hidden),
-            proxyUrl: readVal('input-proxy-url'),
-            proxyBypass: readVal('input-proxy-bypass'),
             ctxDraftDirty: Boolean(readVal('ctx-custom-limit-input')),
             ctxCustomValue: readVal('ctx-custom-limit-input'),
             enhanceTitleDirty: Boolean(enhanceSaveBtn && !enhanceSaveBtn.hidden),
@@ -181,7 +177,7 @@
   let heatMonthOffset = 0;
   let heatYearOffset = 0;
   let activeCostModel = 'gemini-3.8-flash';
-  let activeCostMode = 'ref';
+  let activeCostMode = 'hybrid';
   let autoCheckUpdate = true;
   let cachedLatestRelease = null;
 
@@ -230,7 +226,6 @@
       '/restart-language-servers': 'enhance',
       '/modules-status': 'modules',
       '/toggle-module': 'modules',
-      '/test-proxy': 'modules',
       '/check-update': 'checkUpdate',
       '/apply-update': 'applyUpdate'
     };
@@ -946,9 +941,14 @@
   }
 
   let elevatedStackAncestor = null;
+  let stackElevationReleaseTimer = null;
 
-  function syncHostStackingElevation(elevate) {
+  function syncHostStackingElevation(elevate, immediate = false) {
     try {
+      if (stackElevationReleaseTimer) {
+        clearTimeout(stackElevationReleaseTimer);
+        stackElevationReleaseTimer = null;
+      }
       if (elevate) {
         const z0 = host.closest?.('div.relative.z-0');
         if (z0?.style) {
@@ -956,11 +956,23 @@
           z0.style.zIndex = '40';
         }
       } else if (elevatedStackAncestor?.style) {
-        elevatedStackAncestor.style.zIndex = '';
-        elevatedStackAncestor = null;
+        if (immediate) {
+          elevatedStackAncestor.style.zIndex = '';
+          elevatedStackAncestor = null;
+        } else {
+          // 退回滑出 240ms 动画期间保持层级高于宿主区，防止首帧即被遮挡而看不到收回动画
+          stackElevationReleaseTimer = setTimeout(() => {
+            stackElevationReleaseTimer = null;
+            try {
+              if (elevatedStackAncestor?.style) elevatedStackAncestor.style.zIndex = '';
+            } catch { }
+            elevatedStackAncestor = null;
+          }, 260);
+        }
       }
     } catch { }
   }
+  earlyDisposeHooks.push(() => syncHostStackingElevation(false, true));
 
   function getLeftProjectSidebarRight(vw) {
     try {
@@ -977,7 +989,110 @@
     return 0;
   }
 
-  function positionFloatingPanels() {
+  let pushedWorkspaceTarget = null;
+  let pushedWorkspacePrevTransition = '';
+  let pushedWorkspaceWidth = 0;
+  let closingWorkspaceTarget = null;
+  let closingWorkspacePrevTransition = '';
+  let workspacePushResetTimer = null;
+
+  function getWorkspacePushTarget() {
+    try {
+      if (typeof document.querySelector !== 'function') return null;
+      return document.querySelector('.agy-inset-shell > div.relative.flex')
+        || document.querySelector('.agy-sheet')
+        || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function syncWorkspaceDrawerPush(drawerWidthPx, overlayActive = false, immediate = false) {
+    try {
+      const target = getWorkspacePushTarget();
+      if (workspacePushResetTimer) {
+        clearTimeout(workspacePushResetTimer);
+        workspacePushResetTimer = null;
+      }
+      if (pushedWorkspaceTarget && pushedWorkspaceTarget !== target) {
+        try {
+          if (pushedWorkspaceTarget.style) {
+            pushedWorkspaceTarget.style.marginRight = '';
+            pushedWorkspaceTarget.style.transition = pushedWorkspacePrevTransition;
+          }
+        } catch { }
+        pushedWorkspaceTarget = null;
+        pushedWorkspacePrevTransition = '';
+        pushedWorkspaceWidth = 0;
+      }
+      if (!drawerWidthPx || overlayActive || !target?.style) {
+        if (pushedWorkspaceTarget?.style) {
+          const closingTarget = pushedWorkspaceTarget;
+          const prevTrans = pushedWorkspacePrevTransition;
+          closingTarget.style.marginRight = '';
+          if (immediate) {
+            closingTarget.style.transition = prevTrans;
+            closingWorkspaceTarget = null;
+            closingWorkspacePrevTransition = '';
+          } else {
+            // 保留 margin-right 过渡属性至收回动画完成，并记录真实原 transition 防止 260ms 内重开时自捕获
+            closingWorkspaceTarget = closingTarget;
+            closingWorkspacePrevTransition = prevTrans;
+            workspacePushResetTimer = setTimeout(() => {
+              workspacePushResetTimer = null;
+              try {
+                if (closingTarget?.style && pushedWorkspaceWidth === 0) {
+                  closingTarget.style.transition = prevTrans;
+                }
+              } catch { }
+              if (closingWorkspaceTarget === closingTarget) {
+                closingWorkspaceTarget = null;
+                closingWorkspacePrevTransition = '';
+              }
+            }, 260);
+          }
+        } else if (immediate && closingWorkspaceTarget?.style) {
+          closingWorkspaceTarget.style.marginRight = '';
+          closingWorkspaceTarget.style.transition = closingWorkspacePrevTransition;
+          closingWorkspaceTarget = null;
+          closingWorkspacePrevTransition = '';
+        }
+        pushedWorkspaceTarget = null;
+        pushedWorkspacePrevTransition = '';
+        pushedWorkspaceWidth = 0;
+        return false;
+      }
+      if (pushedWorkspaceTarget !== target) {
+        if (closingWorkspaceTarget === target) {
+          pushedWorkspacePrevTransition = closingWorkspacePrevTransition;
+          closingWorkspaceTarget = null;
+          closingWorkspacePrevTransition = '';
+        } else {
+          if (closingWorkspaceTarget?.style) {
+            try {
+              closingWorkspaceTarget.style.transition = closingWorkspacePrevTransition;
+            } catch { }
+            closingWorkspaceTarget = null;
+            closingWorkspacePrevTransition = '';
+          }
+          pushedWorkspacePrevTransition = target.style.transition || '';
+        }
+        pushedWorkspaceTarget = target;
+      }
+      if (pushedWorkspaceWidth !== drawerWidthPx) {
+        target.style.transition = 'margin-right 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
+        target.style.marginRight = `${drawerWidthPx}px`;
+        pushedWorkspaceWidth = drawerWidthPx;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  earlyDisposeHooks.push(() => syncWorkspaceDrawerPush(0, true, true));
+
+  function positionFloatingPanels(openingTarget = null) {
     if (!host.getBoundingClientRect) return;
     try {
       const hRect = host.getBoundingClientRect();
@@ -986,27 +1101,63 @@
       const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
       const navRight = getLeftProjectSidebarRight(vw);
       const minLeft = navRight > 0 ? Math.max(12, navRight + 12) : 12;
+      const dpr = getEffectiveDpr();
 
-      const placePanel = (panelEl, targetW, anchorBtn) => {
+      const sheetEl = typeof document !== 'undefined' && typeof document.querySelector === 'function'
+        ? document.querySelector('.agy-sheet')
+        : null;
+      const sheetRect = sheetEl && typeof sheetEl.getBoundingClientRect === 'function'
+        ? sheetEl.getBoundingClientRect()
+        : null;
+      const hasSheetRect = Boolean(sheetRect && sheetRect.height > 100 && Number.isFinite(sheetRect.top));
+      const rightGap = vw <= 500 ? 0 : 8;
+      const rawBottomGap = hasSheetRect && Number.isFinite(sheetRect.bottom)
+        ? Math.max(6, Math.min(16, vh - sheetRect.bottom))
+        : rightGap;
+      const bottomGap = vw <= 500 ? 0 : snapToDevicePixel(rawBottomGap);
+      const rawTop = hasSheetRect
+        ? sheetRect.top
+        : (hRect.bottom ? Math.round(hRect.bottom) + 6 : 40);
+
+      const placeDrawer = (panelEl, targetW) => {
+        if (!panelEl) return 0;
+        const top = snapToDevicePixel(Math.max(36, Math.min(vh - 160, rawTop)));
+        const isCompact = panelEl.classList?.contains?.('cost-compact-view') || panelEl.getAttribute?.('class')?.includes?.('cost-compact-view');
+        const effW = isCompact ? 420 : targetW;
+        const maxAvailW = Math.max(260, vw - navRight - rightGap);
+        const finalW = snapToDevicePixel(Math.min(effW, maxAvailW));
+        const left = snapToDevicePixel(Math.max(navRight, vw - finalW - rightGap));
+        const drawerH = snapToDevicePixel(Math.max(160, vh - top - bottomGap));
+        const geomKey = `drawer|${top}|${left}|${rightGap}|${bottomGap}|${finalW}|${drawerH}|${isCompact ? 1 : 0}|${dpr}`;
+        if (panelEl._lastPlacedGeomKey !== geomKey) {
+          panelEl._lastPlacedGeomKey = geomKey;
+          panelEl.style.top = `${top}px`;
+          panelEl.style.left = `${left}px`;
+          panelEl.style.right = `${rightGap}px`;
+          panelEl.style.bottom = `${bottomGap}px`;
+          panelEl.style.width = `${finalW}px`;
+          panelEl.style.maxWidth = `${maxAvailW}px`;
+          panelEl.style.height = `${drawerH}px`;
+          panelEl.style.maxHeight = `${drawerH}px`;
+          panelEl.style.transformOrigin = 'right center';
+        }
+        return finalW;
+      };
+
+      const placePopup = (panelEl, targetW, anchorBtn) => {
         if (!panelEl) return;
         const bRect = (anchorBtn && anchorBtn.getBoundingClientRect && anchorBtn !== host && anchorBtn.getBoundingClientRect().right > hRect.left)
           ? anchorBtn.getBoundingClientRect()
           : hRect;
-        const dpr = getEffectiveDpr();
         const top = snapToDevicePixel(Math.max(36, Math.min(vh - 120, (bRect.bottom || hRect.bottom) + 6)));
-        const isCompact = panelEl.classList?.contains?.('cost-compact-view') || panelEl.getAttribute?.('class')?.includes?.('cost-compact-view');
-        const effW = isCompact ? 400 : targetW;
-        const maxAvailW = Math.max(260, vw - minLeft - 12);
-        const finalW = Math.min(effW, maxAvailW);
-
-        // 核心锚点：右侧精确对齐到触发按钮右边缘，并按当前 DPI 物理像素网格对齐
+        const maxAvailW = Math.max(220, vw - minLeft - 12);
+        const finalW = Math.min(targetW, maxAvailW);
         let left = snapToDevicePixel(bRect.right - finalW);
         left = Math.min(left, snapToDevicePixel(vw - finalW - 12));
         left = Math.max(snapToDevicePixel(minLeft), left);
-
-        const maxWidthPx = Math.max(260, vw - left - 12);
+        const maxWidthPx = Math.max(220, vw - left - 12);
         const maxHeightPx = Math.max(160, vh - top - 16);
-        const geomKey = `${top}|${left}|${maxWidthPx}|${maxHeightPx}|${isCompact ? 1 : 0}|${dpr}`;
+        const geomKey = `popup|${top}|${left}|${maxWidthPx}|${maxHeightPx}|${dpr}`;
         if (panelEl._lastPlacedGeomKey === geomKey) return;
         panelEl._lastPlacedGeomKey = geomKey;
 
@@ -1018,11 +1169,42 @@
         panelEl.style.transformOrigin = 'top right';
       };
 
-      placePanel(el('panel'), 472, el(activeContextAnchorId) || el('badge'));
-      placePanel(el('panel-quota'), 460, el(activeQuotaAnchorId) || el('badge-quota'));
-      placePanel(el('panel-tokens'), 730, el(activeTokensAnchorId) || el('badge-tokens'));
-      placePanel(el('overflow-menu'), 220, el('badge-overflow'));
+      const pContext = el('panel');
+      const pQuota = el('panel-quota');
+      const pTokens = el('panel-tokens');
+
+      const wContext = placeDrawer(pContext, 420);
+      const wQuota = placeDrawer(pQuota, 420);
+      const wTokens = placeDrawer(pTokens, 730);
+      placePopup(el('overflow-menu'), 220, el('badge-overflow'));
       positionColorPickerPopover();
+
+      const resolvedTarget = openingTarget === 'none'
+        ? null
+        : (openingTarget || (!pContext?.hidden ? 'context' : (!pQuota?.hidden ? 'quota' : (!pTokens?.hidden ? 'tokens' : null))));
+
+      const targetMap = {
+        context: { node: pContext, w: wContext },
+        quota: { node: pQuota, w: wQuota },
+        tokens: { node: pTokens, w: wTokens }
+      };
+      for (const [k, info] of Object.entries(targetMap)) {
+        if (!info.node) continue;
+        if (k !== resolvedTarget) info.node.removeAttribute?.('data-overlay');
+      }
+      if (resolvedTarget && targetMap[resolvedTarget]?.w > 0) {
+        const activeInfo = targetMap[resolvedTarget];
+        const shouldOverlay = (vw - navRight - activeInfo.w - rightGap) < 460;
+        if (shouldOverlay) {
+          activeInfo.node?.setAttribute?.('data-overlay', 'true');
+          syncWorkspaceDrawerPush(0, true);
+        } else {
+          activeInfo.node?.removeAttribute?.('data-overlay');
+          syncWorkspaceDrawerPush(activeInfo.w + rightGap, false);
+        }
+      } else {
+        syncWorkspaceDrawerPush(0, true);
+      }
     } catch { }
   }
 
@@ -1211,14 +1393,17 @@
     if (target === 'tokens') {
       hideContextTooltip();
       closeColorPicker();
+      if (!pContext.hidden) pContext.setAttribute?.('data-instant-hide', 'true');
+      if (pQuota && !pQuota.hidden) pQuota.setAttribute?.('data-instant-hide', 'true');
       pContext.hidden = true;
       if (pQuota) pQuota.hidden = true;
+      pTokens.removeAttribute?.('data-instant-hide');
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'true');
       syncHostStackingElevation(true);
-      positionFloatingPanels();
+      positionFloatingPanels('tokens');
       pTokens.hidden = false;
       renderActiveHeatView(true);
       const hasCachedHistory = Boolean(ANTIGRAVITY_TOKEN_DATA.updatedAt || ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens);
@@ -1229,14 +1414,17 @@
       hideContextTooltip();
       closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
+      if (!pContext.hidden) pContext.setAttribute?.('data-instant-hide', 'true');
+      if (!pTokens.hidden) pTokens.setAttribute?.('data-instant-hide', 'true');
       pContext.hidden = true;
       pTokens.hidden = true;
+      pQuota?.removeAttribute?.('data-instant-hide');
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'true');
       syncHostStackingElevation(true);
-      positionFloatingPanels();
+      positionFloatingPanels('quota');
       if (pQuota) pQuota.hidden = false;
       if (typeof renderQuotaBoard === 'function') renderQuotaBoard();
       if (typeof maybeRefreshQuotaOnOpen === 'function') void maybeRefreshQuotaOnOpen();
@@ -1244,14 +1432,17 @@
       hideContextTooltip();
       closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
+      if (!pTokens.hidden) pTokens.setAttribute?.('data-instant-hide', 'true');
+      if (pQuota && !pQuota.hidden) pQuota.setAttribute?.('data-instant-hide', 'true');
       pTokens.hidden = true;
       if (pQuota) pQuota.hidden = true;
+      pContext.removeAttribute?.('data-instant-hide');
       bContext.setAttribute('aria-expanded', String(activeContextAnchorId === 'badge'));
       bSpeed?.setAttribute('aria-expanded', String(activeContextAnchorId === 'badge-speed'));
       bTokens.setAttribute('aria-expanded', 'false');
       bQuota?.setAttribute('aria-expanded', 'false');
       syncHostStackingElevation(true);
-      positionFloatingPanels();
+      positionFloatingPanels('context');
       pContext.hidden = false;
       applyContextViewVisibility?.();
       if (activeContextTab === 'models' && !isContextSettingsView) {
@@ -1265,6 +1456,9 @@
       }
     } else {
       setPlanDetailExpanded(false, { skipReposition: true });
+      pContext.removeAttribute?.('data-instant-hide');
+      pTokens.removeAttribute?.('data-instant-hide');
+      pQuota?.removeAttribute?.('data-instant-hide');
       pContext.hidden = true;
       pTokens.hidden = true;
       if (pQuota) pQuota.hidden = true;
@@ -1274,6 +1468,7 @@
       bQuota?.setAttribute('aria-expanded', 'false');
       closeColorPicker();
       hidePopover();
+      syncWorkspaceDrawerPush(0, true);
       syncHostStackingElevation(false);
     }
   }
@@ -2067,6 +2262,19 @@
   el('close').addEventListener('click', () => showPanel('none'));
   el('close-tokens')?.addEventListener('click', () => showPanel('none'));
   el('close-quota')?.addEventListener('click', () => showPanel('none'));
+  for (const [navId, navTarget] of [
+    ['nav-ctx-context', 'context'],
+    ['nav-ctx-quota', 'quota'],
+    ['nav-ctx-tokens', 'tokens'],
+    ['nav-quo-context', 'context'],
+    ['nav-quo-quota', 'quota'],
+    ['nav-quo-tokens', 'tokens'],
+    ['nav-tok-context', 'context'],
+    ['nav-tok-quota', 'quota'],
+    ['nav-tok-tokens', 'tokens']
+  ]) {
+    el(navId)?.addEventListener('click', () => showPanel(navTarget));
+  }
   el('badge-quota')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
   // 上下文圆环悬停与键盘聚焦气泡（面板打开时不通过悬停误切，必须通过显式左键点击切换）
@@ -2087,6 +2295,7 @@
 
   el('theme-toggle')?.addEventListener('click', cycleTheme);
   el('theme-toggle-tokens')?.addEventListener('click', cycleTheme);
+  el('theme-toggle-quota')?.addEventListener('click', cycleTheme);
   el('badge').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-speed')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
@@ -6415,10 +6624,6 @@
         const open = unlockDrawerBody.style.display === 'block';
         unlockDrawerArrow.textContent = open ? t('drawer.collapse') : t('drawer.expand');
       }
-      if (proxyDrawerArrow && proxyDrawerBody) {
-        const open = proxyDrawerBody.style.display === 'block';
-        proxyDrawerArrow.textContent = open ? t('drawer.shortCollapse') : t('drawer.shortExpand');
-      }
       if (chineseDrawerArrow && chineseDrawerBody) {
         const open = chineseDrawerBody.style.display === 'block';
         chineseDrawerArrow.textContent = open ? t('drawer.collapse') : t('drawer.expand');
@@ -6461,7 +6666,7 @@
       if (typeof rerenderSettingsFeedbacks === 'function') rerenderSettingsFeedbacks();
     } catch { }
     try {
-      if (isChineseExpanded || isProxyExpanded || isContextSettingsView) {
+      if (isChineseExpanded || isContextSettingsView) {
         void refreshModulesDisplay();
       }
       if (isContextSettingsView && typeof refreshEnhanceStatus === 'function') {
@@ -6527,83 +6732,7 @@
     }
   });
 
-  // -------------------------------------------------------------
-  // 模块 3: 免 TUN 网络直连 (AntigravityProxyNoTun)
-  // -------------------------------------------------------------
-  const btnToggleProxy = el('btn-toggle-proxy');
-  const proxyDrawerBody = el('proxy-drawer-body');
-  const proxyDrawerArrow = el('proxy-drawer-arrow');
-  const proxyBadge = el('proxy-badge');
-  const proxyStatusDesc = el('proxy-status-desc');
-  const inputProxyUrl = el('input-proxy-url');
-  const inputProxyBypass = el('input-proxy-bypass');
-  const btnTestProxy = el('btn-test-proxy');
-  const btnSaveProxyConfig = el('btn-save-proxy-config');
-  const btnToggleProxyModule = el('btn-toggle-proxy-module');
-  const proxyTestResult = el('proxy-test-result');
-
-  let isProxyExpanded = false;
-  let currentProxyEnabled = false;
-  let proxyInputDirty = false;
-  let savedProxyUrl = '';
-  let savedProxyBypass = '';
-  let isProxyBusy = false;
   let modulesStatusReqSeq = 0;
-
-  function proxyInputsDifferFromSaved() {
-    const curUrl = String(inputProxyUrl?.value ?? '').trim();
-    const curBypass = String(inputProxyBypass?.value ?? '').trim();
-    return Boolean(
-      (curUrl && curUrl !== savedProxyUrl) ||
-      (curBypass !== savedProxyBypass)
-    );
-  }
-
-  function syncProxySaveButtonState() {
-    if (!btnSaveProxyConfig) return;
-    const show = Boolean(currentProxyEnabled && (proxyInputDirty || proxyInputsDifferFromSaved()));
-    btnSaveProxyConfig.hidden = !show;
-    btnSaveProxyConfig.disabled = Boolean(isProxyBusy);
-    btnSaveProxyConfig.textContent = isProxyBusy ? t('mod.proxy.btnSaving') : t('mod.proxy.btnSave');
-  }
-
-  inputProxyUrl?.addEventListener('input', () => {
-    proxyInputDirty = true;
-    syncProxySaveButtonState();
-  });
-  inputProxyBypass?.addEventListener('input', () => {
-    proxyInputDirty = true;
-    syncProxySaveButtonState();
-  });
-
-  async function invokeTestProxyApi(proxyUrl) {
-    const ipcFn = (typeof window !== 'undefined' && typeof window.contextMeterAPI?.testProxy === 'function')
-      ? () => window.contextMeterAPI.testProxy(proxyUrl)
-      : null;
-    if (!ipcFn && !hasLiveHttpBridge()) {
-      return { ok: false, error: t('msg.noHostBridge'), unavailable: true };
-    }
-    try {
-      const out = await callBackendWithPriority({
-        ipcCall: ipcFn,
-        liveRoute: '/test-proxy',
-        liveBody: { proxyUrl }
-      });
-      return out.result || { ok: false, error: t('msg.noHostBridge'), unavailable: true };
-    } catch (e) {
-      return { ok: false, error: e?.message || t('msg.noHostBridge') };
-    }
-  }
-
-  btnToggleProxy?.addEventListener('click', () => {
-    isProxyExpanded = !isProxyExpanded;
-    if (proxyDrawerBody) proxyDrawerBody.style.display = isProxyExpanded ? 'block' : 'none';
-    if (proxyDrawerArrow) proxyDrawerArrow.textContent = isProxyExpanded ? t('drawer.shortCollapse') : t('drawer.shortExpand');
-    btnToggleProxy?.setAttribute('aria-expanded', String(isProxyExpanded));
-    if (isProxyExpanded) {
-      void refreshModulesDisplay();
-    }
-  });
 
   // -------------------------------------------------------------
   // 模块 3.5: 系统增强、提示词档位、品牌与推荐配置控制器 (PR #3 / PR #4 融合)
@@ -6674,7 +6803,6 @@
   let enhanceGlobalResultState = null; // { ok, resolveMessage, opts }
   let enhancePromptResultState = null; // { ok, resolveMessage }
   let brandFeedbackState = null;       // { mode, isSuccess, resolveMessage, isApplied }
-  let lastProxyTestState = null;       // { pending, thrownErr, res }
 
   function syncBrandTitleButtons(mode = currentBrandTitle) {
     for (const [k, btn] of Object.entries(brandTitleBtns)) {
@@ -6918,31 +7046,6 @@
     }
   }
 
-  function renderProxyTestResultView() {
-    if (!proxyTestResult || !lastProxyTestState) return;
-    if (lastProxyTestState.pending) {
-      proxyTestResult.textContent = t('settings.proxy.testingDetail');
-      return;
-    }
-    if (lastProxyTestState.thrownErr) {
-      proxyTestResult.textContent = t('settings.proxy.testErr', { err: translateBackendText(lastProxyTestState.thrownErr) || t('msg.unknownErr') });
-      return;
-    }
-    const res = lastProxyTestState.res;
-    if (!res || !res.ok) {
-      proxyTestResult.textContent = t('settings.proxy.testFail', { err: translateBackendText(res?.error) || t('models.meta.archUnknown') });
-      return;
-    }
-    const d = res.data;
-    proxyTestResult.innerHTML = `
-      ${t('settings.proxy.resFmt')}: ${d.configValid ? t('settings.proxy.resValid') : t('settings.proxy.resInvalid')}<br>
-      ${t('settings.proxy.resPort')}: ${d.proxyReachable ? t('settings.proxy.resReachable') : t('settings.proxy.resUnreachable')}<br>
-      ${t('settings.proxy.resNet')}: ${d.internetReachable ? t('settings.proxy.resOnline') : t('settings.proxy.resOffline')}<br>
-      ${t('settings.proxy.resModel')}: ${t('settings.proxy.resPending')}
-      ${d.error ? `<br><span style="color:var(--ag-danger)">⚠️ ${translateBackendText(d.error)}</span>` : ''}
-    `;
-  }
-
   /** 面板语言切换后，同步更新设置页当前仍可见的动态操作反馈与确认提示 */
   function rerenderSettingsFeedbacks() {
     renderEnhancePresetConfirmText();
@@ -6954,9 +7057,6 @@
     }
     if (brandFeedbackState && brandApplyFeedback && !brandApplyFeedback.hidden && brandApplyFeedback.style.display && brandApplyFeedback.style.display !== 'none') {
       showBrandFeedback(brandFeedbackState.mode, brandFeedbackState.isSuccess, brandFeedbackState.resolveMessage, brandFeedbackState.isApplied);
-    }
-    if (lastProxyTestState && proxyTestResult && proxyTestResult.style.display && proxyTestResult.style.display !== 'none') {
-      renderProxyTestResultView();
     }
   }
 
@@ -7635,7 +7735,7 @@
     void applyBrandTitleSetting(selectedBrandTitle || currentBrandTitle);
   });
 
-  async function refreshModulesDisplay({ forceProxySync = false } = {}) {
+  async function refreshModulesDisplay() {
     const seq = ++modulesStatusReqSeq;
     try {
       const res = await invokeModulesApi('status');
@@ -7648,13 +7748,6 @@
         }
         if (chineseStatusDesc) {
           chineseStatusDesc.textContent = t('mod.zh.failDetect', { err: errMsg });
-        }
-        if (proxyBadge) {
-          proxyBadge.textContent = t('mod.readFail');
-          proxyBadge.className = 'key-pill pill-danger';
-        }
-        if (proxyStatusDesc) {
-          proxyStatusDesc.textContent = t('mod.proxy.failDetect', { err: errMsg });
         }
         return;
       }
@@ -7707,8 +7800,6 @@
       const disk = res.disk || {};
       const isChineseDiskReady = disk.chineseReady !== undefined ? Boolean(disk.chineseReady) : Boolean(disk.chinese);
       const isChinesePartial = Boolean(disk.chinese && disk.chineseReady === false);
-      const isProxyDiskReady = disk.proxyReady !== undefined ? Boolean(disk.proxyReady) : Boolean(disk.proxy);
-      const isProxyPartial = Boolean(disk.proxy && disk.proxyReady === false);
 
       if (chineseBadge) {
         if (!currentChineseEnabled) {
@@ -7754,73 +7845,10 @@
       }
       syncClientLanguageButtons();
 
-      currentProxyEnabled = Boolean(cfg.modules?.proxy?.enabled);
-      const diskProxyUrl = String(cfg.modules?.proxy?.proxyUrl || '');
-      const diskProxyBypass = String(cfg.modules?.proxy?.bypassList || '');
-      savedProxyUrl = diskProxyUrl;
-      savedProxyBypass = diskProxyBypass;
-
-      if (inputProxyUrl && diskProxyUrl && (forceProxySync || (!proxyInputDirty && document?.activeElement !== inputProxyUrl))) {
-        inputProxyUrl.value = diskProxyUrl;
-      }
-      if (inputProxyBypass && (forceProxySync || (!proxyInputDirty && document?.activeElement !== inputProxyBypass))) {
-        inputProxyBypass.value = diskProxyBypass;
-      }
-      if (runtimeMeta) {
-        if (typeof runtimeMeta.chineseNeedsRestart === 'boolean') {
-          needsRestartAfterApply = Boolean(runtimeMeta.proxyNeedsRestart || runtimeMeta.chineseNeedsRestart);
-        } else if (runtimeMeta.proxyNeedsRestart) {
-          needsRestartAfterApply = true;
-        }
+      if (runtimeMeta && typeof runtimeMeta.chineseNeedsRestart === 'boolean') {
+        needsRestartAfterApply = Boolean(runtimeMeta.chineseNeedsRestart);
         renderClientStatusBar();
       }
-
-      if (proxyBadge) {
-        if (currentProxyEnabled) {
-          if (!isProxyDiskReady) {
-            proxyBadge.textContent = t('mod.proxy.badgeNotInjected');
-            proxyBadge.className = 'key-pill pill-warn';
-          } else if (runtimeMeta?.proxyNeedsRestart) {
-            proxyBadge.textContent = t('mod.proxy.badgePendingRestart');
-            proxyBadge.className = 'key-pill pill-warn';
-          } else if (runtimeMeta?.proxyActive) {
-            proxyBadge.textContent = t('mod.proxy.badgeActive');
-            proxyBadge.className = 'key-pill pill-ok';
-          } else {
-            proxyBadge.textContent = t('mod.proxy.badgeOk');
-            proxyBadge.className = 'key-pill pill-ok';
-          }
-        } else if (runtimeMeta?.proxyNeedsRestart) {
-          proxyBadge.textContent = t('mod.proxy.badgePendingOff');
-          proxyBadge.className = 'key-pill pill-warn';
-        } else {
-          proxyBadge.textContent = t('mod.proxy.badgeOff');
-          proxyBadge.className = 'key-pill pill-muted';
-        }
-      }
-      if (proxyStatusDesc) {
-        if (currentProxyEnabled) {
-          if (!isProxyDiskReady) {
-            proxyStatusDesc.textContent = isProxyPartial && disk.proxyReason
-              ? t('mod.proxy.descPartialInject', { reason: translateBackendText(disk.proxyReason) })
-              : t('mod.proxy.descNeedInject');
-          } else if (runtimeMeta?.proxyNeedsRestart) {
-            proxyStatusDesc.textContent = t('mod.proxy.descPendingRestart', { url: diskProxyUrl });
-          } else if (runtimeMeta?.proxyActive) {
-            proxyStatusDesc.textContent = t('mod.proxy.descActive', { url: runtimeMeta.runtimeProxyUrl || diskProxyUrl });
-          } else {
-            proxyStatusDesc.textContent = t('mod.proxy.descOn', { url: diskProxyUrl });
-          }
-        } else if (runtimeMeta?.proxyNeedsRestart) {
-          proxyStatusDesc.textContent = t('mod.proxy.descPendingOff', { url: runtimeMeta.runtimeProxyUrl || '' });
-        } else {
-          proxyStatusDesc.textContent = t('mod.proxy.descOff');
-        }
-      }
-      if (btnToggleProxyModule) {
-        btnToggleProxyModule.textContent = currentProxyEnabled ? t('mod.proxy.btnDisable') : t('mod.proxy.btnEnable');
-      }
-      syncProxySaveButtonState();
     } catch (err) {
       if (seq !== modulesStatusReqSeq) return;
       const errMsg = err?.message || String(err);
@@ -7830,13 +7858,6 @@
       }
       if (chineseStatusDesc) {
         chineseStatusDesc.textContent = t('mod.zh.errDetect', { err: errMsg });
-      }
-      if (proxyBadge) {
-        proxyBadge.textContent = t('mod.readErr');
-        proxyBadge.className = 'key-pill pill-danger';
-      }
-      if (proxyStatusDesc) {
-        proxyStatusDesc.textContent = t('mod.proxy.errDetect', { err: errMsg });
       }
     }
   }
@@ -7893,90 +7914,6 @@
 
   btnToggleChineseModule?.addEventListener('click', () => {
     void setClientLanguageTarget(!currentChineseEnabled);
-  });
-
-  async function applyProxyModuleUpdate(enableTarget) {
-    if (isProxyBusy) return;
-    isProxyBusy = true;
-    const rawUrl = String(inputProxyUrl?.value ?? '').trim();
-    const rawBypass = String(inputProxyBypass?.value ?? '').trim();
-    if (btnToggleProxyModule) {
-      btnToggleProxyModule.disabled = true;
-      btnToggleProxyModule.textContent = t('mod.processing');
-    }
-    syncProxySaveButtonState();
-    try {
-      await yieldForSettingsPaint();
-      const res = await invokeModulesApi('toggle', 'proxy', Boolean(enableTarget), {
-        proxyUrl: rawUrl || undefined,
-        bypassList: rawBypass
-      });
-      if (!res || !res.ok) {
-        const errPayload = res;
-        showEnhanceResultBox(false, () => resolveSettingsErrorText(errPayload, 'mod.proxy.toggleFail'));
-      } else {
-        proxyInputDirty = false;
-        const needRestart = Boolean(res.runtime?.proxyNeedsRestart ?? res.restartRequired);
-        if (needRestart) needsRestartAfterApply = true;
-        const appliedUrl = res.data?.modules?.proxy?.proxyUrl || rawUrl;
-        if (enableTarget) {
-          const msgKey = needRestart ? 'mod.proxy.savedPendingRestart' : 'mod.proxy.savedAlreadyActive';
-          showEnhanceResultBox(true, () => t(msgKey, { url: appliedUrl }), { needsHostRestart: needRestart });
-        } else {
-          const msgKey = needRestart ? 'mod.proxy.disabledPendingRestart' : 'mod.proxy.disabledSaved';
-          showEnhanceResultBox(true, () => t(msgKey), { needsHostRestart: needRestart });
-        }
-      }
-      await refreshModulesDisplay({ forceProxySync: true });
-    } catch (e) {
-      showEnhanceResultBox(false, () => `${t('mod.proxy.toggleFail')}: ${resolveSettingsErrorText(e, 'msg.unknownErr')}`);
-    } finally {
-      isProxyBusy = false;
-      if (btnToggleProxyModule) {
-        btnToggleProxyModule.disabled = false;
-        btnToggleProxyModule.textContent = currentProxyEnabled ? t('mod.proxy.btnDisable') : t('mod.proxy.btnEnable');
-      }
-      syncProxySaveButtonState();
-    }
-  }
-
-  btnToggleProxyModule?.addEventListener('click', () => {
-    void applyProxyModuleUpdate(!currentProxyEnabled);
-  });
-
-  btnSaveProxyConfig?.addEventListener('click', () => {
-    void applyProxyModuleUpdate(true);
-  });
-
-  btnTestProxy?.addEventListener('click', async () => {
-    if (isProxyBusy) return;
-    try {
-      if (btnTestProxy) {
-        btnTestProxy.disabled = true;
-        btnTestProxy.textContent = t('settings.proxy.testing');
-      }
-      if (proxyTestResult) {
-        proxyTestResult.style.display = 'block';
-        lastProxyTestState = { pending: true };
-        renderProxyTestResultView();
-      }
-      await yieldForSettingsPaint();
-      const res = await invokeTestProxyApi(inputProxyUrl?.value?.trim());
-      if (proxyTestResult) {
-        lastProxyTestState = { pending: false, res };
-        renderProxyTestResultView();
-      }
-    } catch (e) {
-      if (proxyTestResult) {
-        lastProxyTestState = { pending: false, thrownErr: e?.message || String(e || '') };
-        renderProxyTestResultView();
-      }
-    } finally {
-      if (btnTestProxy) {
-        btnTestProxy.disabled = false;
-        btnTestProxy.textContent = t('settings.proxy.testBtn');
-      }
-    }
   });
 
   // 静默初始化检测一次解锁状态与各模块状态
@@ -8058,10 +7995,10 @@
 
   // 热力图视图切换（每天 / 每周 / 累计总量）
 
-  // 费用估算范围（默认本期：自然月）与估值模式（默认参考模型折算，首屏展示真实用量价值）
+  // 费用估算范围（默认本期：自然月）与估值模式（默认各模型官方价，未识别历史兜底参考模型）
   let activeCostScope = 'period'; // 'period' | 'all'
-  let costModelMode = 'ref'; // 'ref' | 'hybrid' | 'identified'
-  let activeRefMode = 'all'; // 兼容旧接口 'all' | 'hybrid'
+  let costModelMode = 'hybrid'; // 'hybrid' | 'identified' | 'ref'
+  let activeRefMode = 'hybrid'; // 兼容旧接口 'all' | 'hybrid'
 
   function switchCostScope(scope) {
     activeCostScope = scope;
@@ -8074,9 +8011,12 @@
 
   function switchCostModelMode(mode) {
     costModelMode = mode;
-    setPillActive(el('cost-btn-mode-ref'), mode === 'ref');
+    if (mode === 'hybrid' || mode === 'identified' || mode === 'ref') {
+      activeCostMode = mode;
+    }
     setPillActive(el('cost-btn-mode-hybrid'), mode === 'hybrid');
     setPillActive(el('cost-btn-mode-identified'), mode === 'identified');
+    setPillActive(el('cost-btn-mode-ref'), mode === 'ref');
     renderActiveCostEstimateView();
   }
   el('cost-btn-mode-ref')?.addEventListener('click', () => switchCostModelMode('ref'));
@@ -8096,16 +8036,95 @@
 
   function switchRefMode(mode) {
     activeRefMode = mode;
-    costModelMode = mode === 'hybrid' ? 'hybrid' : 'ref';
+    switchCostModelMode(mode === 'hybrid' ? 'hybrid' : 'ref');
     setPillActive(el('btn-ref-mode-all'), mode === 'all');
     setPillActive(el('btn-ref-mode-hybrid'), mode === 'hybrid');
-    renderActiveCostEstimateView();
   }
   el('btn-ref-mode-all')?.addEventListener('click', () => switchRefMode('all'));
   el('btn-ref-mode-hybrid')?.addEventListener('click', () => switchRefMode('hybrid'));
 
+  function formatPerMRateText(costUSD, tokens, fixedRate, approx = false) {
+    const fmtPrice = (v) => {
+      if (!Number.isFinite(v) || v <= 0) return null;
+      return v >= 0.5 ? v.toFixed(2) : v.toFixed(3);
+    };
+    if (fixedRate != null) {
+      const f = fmtPrice(Number(fixedRate));
+      return f ? `($${f}/M)` : '';
+    }
+    if (tokens > 0 && costUSD > 0) {
+      const blended = (costUSD * 1e6) / tokens;
+      const f = fmtPrice(blended);
+      return f ? `(${approx ? '≈' : ''}$${f}/M)` : '';
+    }
+    return '';
+  }
+
+  function resolveKnownCategoryCosts(ce, core) {
+    if (ce?.byCategoryCost && (
+      ce.byCategoryCost.inputCostUSD != null ||
+      ce.byCategoryCost.cacheCostUSD != null ||
+      ce.byCategoryCost.outputCostUSD != null
+    )) {
+      return {
+        inputCostUSD: Number(ce.byCategoryCost.inputCostUSD || 0),
+        cacheCostUSD: Number(ce.byCategoryCost.cacheCostUSD || 0),
+        outputCostUSD: Number(ce.byCategoryCost.outputCostUSD || 0)
+      };
+    }
+    const byModel = ce?.byModel || {};
+    const keys = Object.keys(byModel);
+    let inC = 0, caC = 0, outC = 0;
+    let hasPerModelBreakdown = false;
+    for (const k of keys) {
+      const bm = byModel[k];
+      if (!bm) continue;
+      if (bm.inputCostUSD != null || bm.cacheCostUSD != null || bm.outputCostUSD != null) {
+        hasPerModelBreakdown = true;
+        inC += Number(bm.inputCostUSD || 0);
+        caC += Number(bm.cacheCostUSD || 0);
+        outC += Number(bm.outputCostUSD || 0);
+      } else if (core?.GEMINI_PRICING_TABLE?.[k]?.[0]) {
+        const tier = core.GEMINI_PRICING_TABLE[k][0];
+        const mIn = Number(bm.inputTokens || 0);
+        const mCa = Number(bm.cacheTokens || 0);
+        const mOut = Number(bm.outputTokens || 0);
+        if (mIn > 0 || mCa > 0 || mOut > 0) {
+          hasPerModelBreakdown = true;
+          inC += (mIn * tier.inputPerMillion) / 1e6;
+          caC += (mCa * tier.cacheReadPerMillion) / 1e6;
+          outC += (mOut * tier.outputPerMillion) / 1e6;
+        }
+      }
+    }
+    if (hasPerModelBreakdown) {
+      return { inputCostUSD: inC, cacheCostUSD: caC, outputCostUSD: outC };
+    }
+    const cat = ce?.byCategory || {};
+    const cIn = Number(cat.inputTokens || 0);
+    const cCa = Number(cat.cacheTokens || 0);
+    const cOut = Number(cat.outputTokens || 0);
+    if (keys.length === 1 && core?.GEMINI_PRICING_TABLE?.[keys[0]]?.[0] && (cIn > 0 || cCa > 0 || cOut > 0)) {
+      const tier = core.GEMINI_PRICING_TABLE[keys[0]][0];
+      return {
+        inputCostUSD: (cIn * tier.inputPerMillion) / 1e6,
+        cacheCostUSD: (cCa * tier.cacheReadPerMillion) / 1e6,
+        outputCostUSD: (cOut * tier.outputPerMillion) / 1e6
+      };
+    }
+    return {
+      inputCostUSD: (cIn * 0.75) / 1e6,
+      cacheCostUSD: (cCa * 0.075) / 1e6,
+      outputCostUSD: (cOut * 3.75) / 1e6
+    };
+  }
+
   function renderActiveCostEstimateView() {
     const isPeriod = activeCostScope === 'period';
+    setPillActive(el('cost-btn-mode-hybrid'), costModelMode === 'hybrid');
+    setPillActive(el('cost-btn-mode-identified'), costModelMode === 'identified');
+    setPillActive(el('cost-btn-mode-ref'), costModelMode === 'ref');
+
     const titleEl = el('cost-card-title');
     const periodTag = el('cost-period-tag');
     const grandVal = el('cost-grand-val');
@@ -8121,10 +8140,13 @@
     // 分类卡片 DOM
     const inVal = el('ref-cost-input-val');
     const inTok = el('ref-cost-input-tok');
+    const inRateEl = el('ref-cost-input-rate');
     const caVal = el('ref-cost-cache-val');
     const caTok = el('ref-cost-cache-tok');
+    const caRateEl = el('ref-cost-cache-rate');
     const outVal = el('ref-cost-output-val');
     const outTok = el('ref-cost-output-tok');
+    const outRateEl = el('ref-cost-output-rate');
 
     if (titleEl) titleEl.textContent = isPeriod ? t('cost.title') : t('cost.titleAll');
     if (periodTag) {
@@ -8146,13 +8168,13 @@
       ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.monthTokens || (curIn + curCa + curOut))
       : Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens || (curIn + curCa + curOut));
 
+    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
     const refAll = ANTIGRAVITY_TOKEN_DATA.referenceCost?.all || {};
     const refMonth = ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonth || {};
-    const refHybridAll = ANTIGRAVITY_TOKEN_DATA.referenceCost?.hybrid || {};
-    const refHybridMonth = ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonthHybrid || refHybridAll;
-
     const curRef = isPeriod ? refMonth : refAll;
-    const curHybrid = isPeriod ? refHybridMonth : refHybridAll;
+    const rawCurHybrid = isPeriod
+      ? ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonthHybrid
+      : ANTIGRAVITY_TOKEN_DATA.referenceCost?.hybrid;
 
     const ceSourceMap = ANTIGRAVITY_TOKEN_DATA.costEstimateBySource || {};
     const ceAll = ceSourceMap[activeTokenSource] || ceSourceMap.all || ANTIGRAVITY_TOKEN_DATA.costEstimate || {};
@@ -8166,20 +8188,20 @@
     // 2. 估值模式计算
     let effectiveRef = curRef;
     if ((effectiveRef.totalCostUSD === undefined || effectiveRef.totalCostUSD === null) && curTotal > 0) {
-      const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
       if (core && core.calculateReferenceModelCost) {
         effectiveRef = core.calculateReferenceModelCost({
           inputTokens: curIn,
           outputTokens: curOut,
           cacheTokens: curCa,
           totalTokens: curTotal
-        }, 'gemini-3.8-flash', { pricingDate: '2026-11-09', mode: 'all' });
+        }, activeCostModel, { pricingDate: '2026-11-09', mode: 'all' });
       }
     }
 
     const rateIn = Number(effectiveRef.matchedTier?.inputPerMillion ?? 0.75);
     const rateCa = Number(effectiveRef.matchedTier?.cacheReadPerMillion ?? 0.075);
     const rateOut = Number(effectiveRef.matchedTier?.outputPerMillion ?? 3.75);
+    const fallbackModelName = effectiveRef.modelDisplayName || core?.MODEL_DISPLAY_NAMES?.[activeCostModel] || 'Gemini 3.8 Flash Standard';
 
     // 更新小摘要来源与时间描述行及非实付常驻标识
     const scopeDescEl = el('cost-scope-desc');
@@ -8190,6 +8212,10 @@
     }
     const nonPaidBadge = el('cost-non-paid-badge');
     if (nonPaidBadge) nonPaidBadge.textContent = t('cost.nonPaidBadge');
+
+    const pricedCount = Number(curIdentified.pricedRequestsCount || 0);
+    const identifiedModelKeys = Object.keys(curIdentified.byModel || {});
+    const kCatCost = resolveKnownCategoryCosts(curIdentified, core);
 
     if (costModelMode === 'ref') {
       apiCost = Number(effectiveRef.totalCostUSD || 0);
@@ -8207,7 +8233,7 @@
       }
       if (grandSub) {
         grandSub.textContent = t('cost.refSub', {
-          model: effectiveRef.modelDisplayName || 'Gemini 3.8 Flash',
+          model: fallbackModelName,
           in: rateIn.toFixed(2),
           ca: rateCa.toFixed(3),
           out: rateOut.toFixed(2)
@@ -8216,38 +8242,130 @@
       pillText = t('cost.modeRef');
       pillClass = 'key-pill pill-muted';
 
-      if (inVal) inVal.textContent = `$${Number(effectiveRef.inputCostUSD || (curIn * rateIn / 1e6)).toFixed(2)}`;
+      if (inRateEl) inRateEl.textContent = formatPerMRateText(0, 0, rateIn);
+      if (caRateEl) caRateEl.textContent = formatPerMRateText(0, 0, rateCa);
+      if (outRateEl) outRateEl.textContent = formatPerMRateText(0, 0, rateOut);
+      if (inVal) inVal.textContent = `$${Number(effectiveRef.inputCostUSD ?? (curIn * rateIn / 1e6)).toFixed(2)}`;
       if (inTok) inTok.textContent = `${fmtYi(curIn)} tok`;
-      if (caVal) caVal.textContent = `$${Number(effectiveRef.cacheCostUSD || (curCa * rateCa / 1e6)).toFixed(2)}`;
+      if (caVal) caVal.textContent = `$${Number(effectiveRef.cacheCostUSD ?? (curCa * rateCa / 1e6)).toFixed(2)}`;
       if (caTok) caTok.textContent = t('cost.tokCacheDiscount', { tok: fmtYi(curCa) });
-      if (outVal) outVal.textContent = `$${Number(effectiveRef.outputCostUSD || (curOut * rateOut / 1e6)).toFixed(2)}`;
+      if (outVal) outVal.textContent = `$${Number(effectiveRef.outputCostUSD ?? (curOut * rateOut / 1e6)).toFixed(2)}`;
       if (outTok) outTok.textContent = `${fmtYi(curOut)} tok`;
     } else if (costModelMode === 'hybrid') {
-      const h = curHybrid.hybrid || {};
-      apiCost = Number(h.combinedTotalUSD || effectiveRef.totalCostUSD || 0);
-      if (grandVal) {
-        grandVal.textContent = t('cost.approx', { val: apiCost.toFixed(2) });
-        grandVal.title = t('cost.hybridSub', { known: h.knownCostUSD || 0, res: h.unpricedResidualCostUSD || 0 });
-      }
-      if (grandSub) {
-        grandSub.textContent = t('cost.hybridSub', {
-          known: Number(h.knownCostUSD || 0).toFixed(2),
-          res: Number(h.unpricedResidualCostUSD || 0).toFixed(2)
+      let effectiveHybrid = rawCurHybrid;
+      if ((!effectiveHybrid || !effectiveHybrid.hybrid) && curTotal > 0 && core?.calculateReferenceModelCost) {
+        effectiveHybrid = core.calculateReferenceModelCost({
+          inputTokens: curIn,
+          outputTokens: curOut,
+          cacheTokens: curCa,
+          totalTokens: curTotal
+        }, activeCostModel, {
+          pricingDate: '2026-11-09',
+          mode: 'unpriced_only',
+          knownUsage: pricedCount > 0 ? {
+            byCategory: curIdentified.byCategory || {},
+            costUSD: curIdentified.pricedCostUSD || 0
+          } : { inputTokens: 0, cacheTokens: 0, outputTokens: 0, costUSD: 0 }
         });
       }
-      pillText = t('cost.hybridBadge');
-      pillClass = 'key-pill pill-muted';
+      const h = effectiveHybrid?.hybrid || {};
+      const knownCost = pricedCount > 0 ? Number(h.knownCostUSD ?? curIdentified.pricedCostUSD ?? 0) : 0;
+      const resCost = Number(
+        h.unpricedResidualCostUSD ?? (pricedCount === 0 ? effectiveRef.totalCostUSD : 0) ?? 0
+      );
+      const combinedCost = pricedCount > 0
+        ? Number(h.combinedTotalUSD ?? (knownCost + resCost) ?? effectiveRef.totalCostUSD ?? 0)
+        : Number(effectiveRef.totalCostUSD || 0);
+      apiCost = combinedCost;
 
-      const rb = h.residualTokensBreakdown || {};
-      if (inVal) inVal.textContent = `$${Number(rb.inputCostUSD || (Number(rb.input || 0) * rateIn / 1e6)).toFixed(2)}`;
-      if (inTok) inTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.input || 0) });
-      if (caVal) caVal.textContent = `$${Number(rb.cacheCostUSD || (Number(rb.cache || 0) * rateCa / 1e6)).toFixed(2)}`;
-      if (caTok) caTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.cache || 0) });
-      if (outVal) outVal.textContent = `$${Number(rb.outputCostUSD || (Number(rb.output || 0) * rateOut / 1e6)).toFixed(2)}`;
-      if (outTok) outTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.output || 0) });
+      if (grandVal) {
+        if (apiCost > 0) {
+          grandVal.textContent = t('cost.approx', { val: apiCost.toFixed(2) });
+          grandVal.title = pricedCount > 0
+            ? (resCost > 0
+              ? t('cost.hybridSub', { known: knownCost.toFixed(2), model: fallbackModelName, res: resCost.toFixed(2) })
+              : t('cost.hybridFullSub', { n: pricedCount }))
+            : t('cost.hybridFallbackSub', { model: fallbackModelName });
+        } else if (curTotal > 0 && curIn === 0 && curCa === 0 && curOut === 0) {
+          grandVal.textContent = t('cost.notReady');
+          grandVal.title = t('cost.notReady');
+        } else {
+          grandVal.textContent = '$0.00';
+          grandVal.title = t('cost.noRecords');
+        }
+      }
+
+      const rb = h.residualTokensBreakdown || (pricedCount === 0
+        ? { input: curIn, cache: curCa, output: curOut, inputCostUSD: effectiveRef.inputCostUSD, cacheCostUSD: effectiveRef.cacheCostUSD, outputCostUSD: effectiveRef.outputCostUSD }
+        : {});
+      const rInTok = Number(rb.input || 0);
+      const rCaTok = Number(rb.cache || 0);
+      const rOutTok = Number(rb.output || 0);
+      const resTokensTotal = Number(h.unpricedResidualTokens ?? (rInTok + rCaTok + rOutTok));
+
+      if (grandSub) {
+        if (pricedCount === 0) {
+          grandSub.textContent = t('cost.hybridFallbackSub', { model: fallbackModelName });
+        } else if (resTokensTotal === 0 && resCost === 0) {
+          grandSub.textContent = t('cost.hybridFullSub', { n: pricedCount });
+        } else {
+          grandSub.textContent = t('cost.hybridSub', {
+            known: knownCost.toFixed(2),
+            model: fallbackModelName,
+            res: resCost.toFixed(2)
+          });
+        }
+      }
+
+      if (pricedCount > 0 && resTokensTotal === 0 && resCost === 0) {
+        pillText = t('cost.hybridFullCov');
+        pillClass = 'key-pill pill-good';
+      } else {
+        pillText = t('cost.hybridBadge');
+        pillClass = 'key-pill pill-muted';
+      }
+
+      const kInTok = pricedCount > 0 ? Number(curIdentified.byCategory?.inputTokens || 0) : 0;
+      const kCaTok = pricedCount > 0 ? Number(curIdentified.byCategory?.cacheTokens || 0) : 0;
+      const kOutTok = pricedCount > 0 ? Number(curIdentified.byCategory?.outputTokens || 0) : 0;
+
+      const rInDollar = Number(rb.inputCostUSD ?? (rInTok * rateIn / 1e6));
+      const rCaDollar = Number(rb.cacheCostUSD ?? (rCaTok * rateCa / 1e6));
+      const rOutDollar = Number(rb.outputCostUSD ?? (rOutTok * rateOut / 1e6));
+
+      const dispInDollar = (pricedCount > 0 ? kCatCost.inputCostUSD : 0) + rInDollar;
+      const dispCaDollar = (pricedCount > 0 ? kCatCost.cacheCostUSD : 0) + rCaDollar;
+      const dispOutDollar = (pricedCount > 0 ? kCatCost.outputCostUSD : 0) + rOutDollar;
+
+      const dispInTok = curIn || (kInTok + rInTok);
+      const dispCaTok = curCa || (kCaTok + rCaTok);
+      const dispOutTok = curOut || (kOutTok + rOutTok);
+
+      const hasMixedRates = (identifiedModelKeys.length > 1) || (pricedCount > 0 && resTokensTotal > 0);
+      if (inRateEl) inRateEl.textContent = formatPerMRateText(dispInDollar, dispInTok, pricedCount === 0 ? rateIn : null, hasMixedRates);
+      if (caRateEl) caRateEl.textContent = formatPerMRateText(dispCaDollar, dispCaTok, pricedCount === 0 ? rateCa : null, hasMixedRates);
+      if (outRateEl) outRateEl.textContent = formatPerMRateText(dispOutDollar, dispOutTok, pricedCount === 0 ? rateOut : null, hasMixedRates);
+
+      if (inVal) inVal.textContent = `$${dispInDollar.toFixed(2)}`;
+      if (inTok) {
+        inTok.textContent = (kInTok > 0 && rInTok > 0)
+          ? t('cost.tokKnownAndResidual', { known: fmtYi(kInTok), res: fmtYi(rInTok) })
+          : `${fmtYi(dispInTok)} tok`;
+      }
+      if (caVal) caVal.textContent = `$${dispCaDollar.toFixed(2)}`;
+      if (caTok) {
+        caTok.textContent = (kCaTok > 0 && rCaTok > 0)
+          ? t('cost.tokKnownAndResidual', { known: fmtYi(kCaTok), res: fmtYi(rCaTok) })
+          : t('cost.tokCacheDiscount', { tok: fmtYi(dispCaTok) });
+      }
+      if (outVal) outVal.textContent = `$${dispOutDollar.toFixed(2)}`;
+      if (outTok) {
+        outTok.textContent = (kOutTok > 0 && rOutTok > 0)
+          ? t('cost.tokKnownAndResidual', { known: fmtYi(kOutTok), res: fmtYi(rOutTok) })
+          : `${fmtYi(dispOutTok)} tok`;
+      }
     } else {
       // 仅已识别真实模型
-      const pricedCount = Number(curIdentified.pricedRequestsCount || 0);
       const unpricedCount = Number(curIdentified.unpricedRequestsCount || 0);
       const totalCount = pricedCount + unpricedCount;
       apiCost = Number(curIdentified.pricedCostUSD || 0);
@@ -8280,12 +8398,21 @@
         pillClass = `key-pill ${pct >= 100 ? 'pill-good' : 'pill-warn'}`;
       }
 
-      if (inVal) inVal.textContent = `$${((curIdentified.byCategory?.inputTokens || 0) * rateIn / 1e6).toFixed(2)}`;
-      if (inTok) inTok.textContent = `${fmtYi(curIdentified.byCategory?.inputTokens || 0)} tok`;
-      if (caVal) caVal.textContent = `$${((curIdentified.byCategory?.cacheTokens || 0) * rateCa / 1e6).toFixed(2)}`;
-      if (caTok) caTok.textContent = `${fmtYi(curIdentified.byCategory?.cacheTokens || 0)} tok`;
-      if (outVal) outVal.textContent = `$${((curIdentified.byCategory?.outputTokens || 0) * rateOut / 1e6).toFixed(2)}`;
-      if (outTok) outTok.textContent = `${fmtYi(curIdentified.byCategory?.outputTokens || 0)} tok`;
+      const kInTok = Number(curIdentified.byCategory?.inputTokens || 0);
+      const kCaTok = Number(curIdentified.byCategory?.cacheTokens || 0);
+      const kOutTok = Number(curIdentified.byCategory?.outputTokens || 0);
+      const isMulti = identifiedModelKeys.length > 1;
+
+      if (inRateEl) inRateEl.textContent = formatPerMRateText(kCatCost.inputCostUSD, kInTok, null, isMulti);
+      if (caRateEl) caRateEl.textContent = formatPerMRateText(kCatCost.cacheCostUSD, kCaTok, null, isMulti);
+      if (outRateEl) outRateEl.textContent = formatPerMRateText(kCatCost.outputCostUSD, kOutTok, null, isMulti);
+
+      if (inVal) inVal.textContent = `$${kCatCost.inputCostUSD.toFixed(2)}`;
+      if (inTok) inTok.textContent = `${fmtYi(kInTok)} tok`;
+      if (caVal) caVal.textContent = `$${kCatCost.cacheCostUSD.toFixed(2)}`;
+      if (caTok) caTok.textContent = `${fmtYi(kCaTok)} tok`;
+      if (outVal) outVal.textContent = `$${kCatCost.outputCostUSD.toFixed(2)}`;
+      if (outTok) outTok.textContent = `${fmtYi(kOutTok)} tok`;
     }
 
     if (covPill) {
@@ -8352,10 +8479,20 @@
       }
     }
 
-    // 5. 详细未计价原因说明
+    // 5. 详细分模型明细（展示可读模型名、官方阶梯费率与小计金额）
     if (breakdown) {
       const modelKeys = Object.keys(curIdentified.byModel || {});
-      const modelDetails = modelKeys.map(k => `${k}: $${curIdentified.byModel[k].costUSD} (${fmt(curIdentified.byModel[k].tokens)} tok)`).join('; ');
+      const modelDetails = modelKeys.map(k => {
+        const bm = curIdentified.byModel[k] || {};
+        const disp = bm.displayName || core?.MODEL_DISPLAY_NAMES?.[k] || k;
+        const rates = bm.tierRates || core?.GEMINI_PRICING_TABLE?.[k]?.[0];
+        const rateStr = rates
+          ? ` ($${Number(rates.inputPerMillion)}/$${Number(rates.cacheReadPerMillion)}/$${Number(rates.outputPerMillion)} /1M)`
+          : '';
+        const costVal = Number(bm.costUSD || 0);
+        const costStr = costVal >= 0.01 ? `$${costVal.toFixed(2)}` : `$${costVal.toFixed(4)}`;
+        return `${disp}${rateStr}: ${costStr} (${fmt(bm.tokens || 0)} tok)`;
+      }).join('；');
       breakdown.textContent = t('cost.breakdownPrefix', {
         details: modelDetails || t('cost.breakdownNone'),
         note: ''
@@ -8364,7 +8501,7 @@
 
     // 6. 兼容性辅助隐藏层同步
     const refGrand = el('ref-cost-grand-val');
-    if (refGrand) refGrand.textContent = t('cost.refApprox', { val: Number(curRef.totalCostUSD || 0).toFixed(2) });
+    if (refGrand) refGrand.textContent = t('cost.refApprox', { val: Number(apiCost || curRef.totalCostUSD || 0).toFixed(2) });
   }
 
   const heatPop = el('heat-pop');
@@ -8492,18 +8629,35 @@
   });
 
   el('refresh').addEventListener('click', () => { if (state.route && !state.scanBusy) void scan(state.generation, state.route, true); });
+  let pointerDownInsideHost = false;
+  const isEventInsideHost = e => {
+    const path = typeof e?.composedPath === 'function' ? e.composedPath() : [];
+    if (path.includes(host)) return true;
+    const tNode = e?.target;
+    return Boolean(tNode && (tNode === host || host.contains?.(tNode)));
+  };
+  const onDocPointerDown = e => {
+    pointerDownInsideHost = isEventInsideHost(e);
+  };
   const outside = e => {
-    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    const path = typeof e?.composedPath === 'function' ? e.composedPath() : [];
+    const insideHost = isEventInsideHost(e);
     const pop = el('color-picker-popover');
-    if (!path.includes(host)) {
+    if (!insideHost) {
+      if (pointerDownInsideHost) {
+        pointerDownInsideHost = false;
+        return;
+      }
       closeColorPicker(true);
-      toggle(false);
       hideContextTooltip();
+      hideUpdatePopover();
       const om = el('overflow-menu');
       if (om) om.hidden = true;
+      toggle(false);
       syncHostStackingElevation(false);
       return;
     }
+    pointerDownInsideHost = false;
     const isClosingNow = pop?.classList ? pop.classList.contains('is-closing') : pop?.getAttribute('data-closing') === 'true';
     if (pop && !pop.hidden && !isClosingNow) {
       const isInsidePicker = path.includes(pop);
@@ -8535,16 +8689,23 @@
         btnColors?.focus?.();
         return;
       }
+      const wasOpen = isAnyPanelOpen() || state.tooltipOpen || !el('overflow-menu')?.hidden;
       toggle(false);
       hideContextTooltip();
       const om = el('overflow-menu');
       if (om) om.hidden = true;
       syncHostStackingElevation(false);
-      el('badge')?.focus?.();
+      if (wasOpen) el('badge')?.focus?.();
     }
   };
-  document.addEventListener('click', outside);
+  document.addEventListener('pointerdown', onDocPointerDown, true);
+  document.addEventListener('click', outside, true);
   document.addEventListener('keydown', escape);
+  earlyDisposeHooks.push(() => {
+    try { document.removeEventListener('pointerdown', onDocPointerDown, true); } catch { }
+    try { document.removeEventListener('click', outside, true); } catch { }
+    try { document.removeEventListener('keydown', escape); } catch { }
+  });
 
   // =========================================================================
   // 模块 4: 数据渲染、完整本地 Token 历史读取与首次使用日起算时间轴
@@ -12427,7 +12588,7 @@
     const openDrawers = [];
     for (const btnId of [
       'btn-toggle-details', 'btn-toggle-card-details', 'btn-toggle-unlock-details',
-      'btn-toggle-enhance-details', 'btn-toggle-proxy', 'btn-toggle-colors', 'btn-toggle-token-colors'
+      'btn-toggle-enhance-details', 'btn-toggle-colors', 'btn-toggle-token-colors'
     ]) {
       if (el(btnId)?.getAttribute?.('aria-expanded') === 'true') {
         openDrawers.push(btnId);
@@ -12442,9 +12603,6 @@
       scrollTops,
       openDrawers,
       drafts: {
-        proxyInputDirty: Boolean(proxyInputDirty),
-        proxyUrl: inputProxyUrl ? inputProxyUrl.value : null,
-        proxyBypass: inputProxyBypass ? inputProxyBypass.value : null,
         ctxDraftDirty: Boolean(ctxDraftDirty),
         ctxCustomValue: ctxCustomInput ? ctxCustomInput.value : null,
         enhanceTierDirty: Boolean(enhanceTierDirty),
@@ -12458,12 +12616,6 @@
   function applyInheritedHotReloadState(saved) {
     if (!saved || typeof saved !== 'object' || state.disposed) return;
     const d = saved.drafts || {};
-    if (d.proxyInputDirty) {
-      if (inputProxyUrl && typeof d.proxyUrl === 'string') inputProxyUrl.value = d.proxyUrl;
-      if (inputProxyBypass && typeof d.proxyBypass === 'string') inputProxyBypass.value = d.proxyBypass;
-      proxyInputDirty = true;
-      syncProxySaveButtonState();
-    }
     if (d.ctxDraftDirty && ctxCustomInput && typeof d.ctxCustomValue === 'string') {
       ctxCustomInput.value = d.ctxCustomValue;
       ctxDraftDirty = true;
@@ -12641,8 +12793,6 @@
       enhanceTitleDraft,
       enhanceTierDirty,
       enhanceTitleDirty,
-      proxyInputDirty,
-      currentProxyEnabled,
       hasPendingLsReload,
       currentEnhanceStatus: currentEnhanceStatus ? { ...currentEnhanceStatus } : null
     }),
@@ -12776,7 +12926,8 @@
         window.removeEventListener?.('mousemove', onPointerMove);
         window.removeEventListener?.('mouseup', onPointerUp);
       } catch { }
-      document.removeEventListener('click', outside);
+      document.removeEventListener('pointerdown', onDocPointerDown, true);
+      document.removeEventListener('click', outside, true);
       document.removeEventListener('keydown', escape);
       try { document.getElementById('ag-wco-spacer')?.remove?.(); } catch { }
       try { document.getElementById('ag-topbar-host-fix')?.remove?.(); } catch { }
