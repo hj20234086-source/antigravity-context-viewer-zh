@@ -307,7 +307,13 @@ test('i18n 运行时 DOM 边界隔离：保护快捷键、斜杠菜单、思考�
     assert.equal(innerSpan.textContent, 'Settings', `受保护属性 ${JSON.stringify(attrs)} 内文本不得被翻译`);
   }
 
-  // 5. 常规 UI 按钮与 title 属性正常翻译
+  // 5. #ag-context-meter 插件自身容器及其子节点完全豁免
+  const pluginInnerSpan = makeNode('SPAN', { children: ['Settings'] });
+  const pluginRoot = makeNode('DIV', { id: 'ag-context-meter', children: [pluginInnerSpan] });
+  sandbox.__AGY_TRANSLATE_EL__(pluginRoot);
+  assert.equal(pluginInnerSpan.textContent, 'Settings', '#ag-context-meter 自身不得被 i18n-runtime 扫描或翻译');
+
+  // 6. 常规 UI 按钮与 title 属性正常翻译
   const normalBtn = makeNode('BUTTON', {
     attrs: { title: 'Review Changes' },
     children: ['Docs & API Reference']
@@ -316,3 +322,96 @@ test('i18n 运行时 DOM 边界隔离：保护快捷键、斜杠菜单、思考�
   assert.equal(normalBtn.textContent, '文档与 API 参考');
   assert.equal(normalBtn.getAttribute('title'), '审查更改');
 });
+
+test('i18n 运行时性能护栏：pointerenter 不递归深层/大容器且 2000 节点深树全量扫描零 querySelector 耗时受控', () => {
+  const dict = JSON.parse(fs.readFileSync(path.join(__dirname, 'i18n', 'zh-CN.json'), 'utf8'));
+  const runtimeCode = fs.readFileSync(path.join(__dirname, 'i18n', 'i18n-runtime.js'), 'utf8');
+
+  let querySelectorCalls = 0;
+  let pointerEnterHandler = null;
+
+  function makeFastNode(tag, opts = {}) {
+    const n = makeNode(tag, opts);
+    Object.defineProperty(n, 'firstElementChild', {
+      get() {
+        return this.childNodes.find((c) => c.nodeType === 1) || null;
+      }
+    });
+    Object.defineProperty(n, 'nextElementSibling', {
+      get() {
+        if (!this.parentElement) return null;
+        const list = this.parentElement.childNodes;
+        const idx = list.indexOf(this);
+        for (let i = idx + 1; i < list.length; i++) {
+          if (list[i].nodeType === 1) return list[i];
+        }
+        return null;
+      }
+    });
+    Object.defineProperty(n, 'childElementCount', {
+      get() {
+        return this.childNodes.filter((c) => c.nodeType === 1).length;
+      }
+    });
+    n.querySelector = () => {
+      querySelectorCalls++;
+      return null;
+    };
+    return n;
+  }
+
+  // 构建 20 层嵌套、共 ~2000 节点的树（含一个 deep #root 容器）
+  const leafSpan = makeFastNode('SPAN', { children: ['Settings'] });
+  const deepWrapper = makeFastNode('DIV', {
+    children: [makeFastNode('DIV', { children: [makeFastNode('DIV', { children: [leafSpan] })] })]
+  });
+  const branchChildren = [];
+  for (let b = 0; b < 100; b++) {
+    let cur = makeFastNode('SPAN', { children: [`Item ${b}`] });
+    for (let d = 0; d < 18; d++) {
+      cur = makeFastNode('DIV', { children: [cur] });
+    }
+    branchChildren.push(cur);
+  }
+  const appRoot = makeFastNode('DIV', { id: 'root', children: [deepWrapper, ...branchChildren] });
+  const body = makeFastNode('BODY', { children: [appRoot] });
+
+  const sandbox = {
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN', brandTitle: 'english' },
+    __AGY_I18N_DATA__: dict,
+    window: null,
+    globalThis: null,
+    document: {
+      body,
+      documentElement: body,
+      readyState: 'complete',
+      addEventListener: (ev, fn) => {
+        if (ev === 'pointerenter') pointerEnterHandler = fn;
+      },
+      querySelectorAll: () => []
+    },
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    setInterval: () => 1,
+    clearInterval: () => {},
+    requestIdleCallback: () => 1
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+
+  const t0 = performance.now();
+  vm.runInNewContext(runtimeCode, sandbox);
+  const scanMs = performance.now() - t0;
+
+  assert.equal(querySelectorCalls, 0, '全树扫描绝不得在祖先循环内调用 querySelector');
+  assert.ok(scanMs < 150, `2000 节点深树首次扫描耗时应 < 150ms，实际 ${scanMs.toFixed(2)}ms`);
+
+  // 重置 deepWrapper 内叶子，模拟 pointerenter 触发外层深嵌套容器时不递归扫描
+  leafSpan.childNodes[0].nodeValue = 'Settings';
+  leafSpan.childNodes[0]._agyOriginal = undefined;
+  assert.equal(typeof pointerEnterHandler, 'function');
+  pointerEnterHandler({ target: appRoot });
+  pointerEnterHandler({ target: deepWrapper });
+  assert.equal(leafSpan.textContent, 'Settings', 'pointerenter 命中 #root 或深嵌套结构容器时不得阻塞遍历子孙');
+});
+

@@ -86,17 +86,19 @@
         return cacheAndReturn(normalized, null);
       }
 
-      for (var i = 0; i < patterns.length; i++) {
-        var p = patterns[i];
-        if (p.regex.test(normalized)) {
-          var result = normalized.replace(p.regex, p.replacement);
-          for (var pi = 0; pi < patterns.length; pi++) {
-            if (patterns[pi].regex.test(result)) {
-              result = result.replace(patterns[pi].regex, patterns[pi].replacement);
+      if (normalized.length <= 280) {
+        for (var i = 0; i < patterns.length; i++) {
+          var p = patterns[i];
+          if (p.regex.test(normalized)) {
+            var result = normalized.replace(p.regex, p.replacement);
+            for (var pi = 0; pi < patterns.length; pi++) {
+              if (patterns[pi].regex.test(result)) {
+                result = result.replace(patterns[pi].regex, patterns[pi].replacement);
+              }
             }
+            p.regex.lastIndex = 0;
+            return cacheAndReturn(normalized, result);
           }
-          p.regex.lastIndex = 0;
-          return cacheAndReturn(normalized, result);
         }
       }
 
@@ -256,6 +258,8 @@
     'chat-input'
   ];
 
+  var IGNORED_CLASS_RE = /(?:monaco-editor|view-lines|view-line|monaco-mouse-cursor-text|xterm|terminal|token|hljs|code-block|editor-instance|thought-content|thinking-content|thought-box|cursor-edit|group\/user-input-step|user-message|input-area|chat-input)/;
+
   var TRANSLATABLE_ATTRS = ['title', 'placeholder', 'aria-label', 'data-tooltip', 'alt', 'aria-description'];
 
   function isModelSelectorBoundary(elem) {
@@ -291,55 +295,73 @@
     return false;
   }
 
-  function shouldIgnoreElement(el) {
-    if (!el || el.nodeType !== 1) return false;
-    if (el.id === 'context-meter-root') return true;
-    if (IGNORED_TAGS[el.tagName] || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
-    if (el.isContentEditable) return true;
-    if (el.closest && el.closest('#context-meter-root')) return true;
+  function isThinkingTriggerButton(node) {
+    return Boolean(
+      node && node.nodeType === 1 && node.tagName === 'BUTTON' &&
+      node.getAttribute && node.getAttribute('data-testid') === 'thinking-collapsible-trigger'
+    );
+  }
 
-    // 模型选择器相关边界元素及其子元素保持英文原样（纯属性 O(1) 短路）
-    if (isModelSelectorBoundary(el)) return true;
-
-    // 保护斜杠命令 (/plan, /review 等) 与 @ 文件/命令建议下拉标签，仅放行 @ 分类白名单
-    var menuOptionLabel = el.closest ? el.closest('[data-testid="menu-option-label"]') : null;
-    if (menuOptionLabel && typeof menuOptionLabel === 'object') {
-      var optionText = String(menuOptionLabel.innerText || menuOptionLabel.textContent || '').trim();
-      if (!Object.prototype.hasOwnProperty.call(MENTION_CATEGORY_MAP, optionText)) {
-        return true;
+  function isThinkingCollapsibleBodySibling(cur) {
+    var parent = cur ? cur.parentElement : null;
+    if (!parent) return false;
+    var first = parent.firstElementChild;
+    if (first !== undefined) {
+      if (first) {
+        if (first !== cur && isThinkingTriggerButton(first)) return true;
+        var second = first.nextElementSibling;
+        if (second && second !== cur && isThinkingTriggerButton(second)) return true;
       }
       return false;
     }
-
-    // 思考折叠栏标题按钮（如 "Thought for 4s"）允许翻译，避免被外层容器误拦截
-    if (el.closest && el.closest('button[data-testid="thinking-collapsible-trigger"]') && !el.closest('code, pre, kbd, svg, .monaco-editor')) {
-      return false;
+    var children = parent.childNodes;
+    if (children && children.length) {
+      var elemSeen = 0;
+      for (var ci = 0; ci < children.length; ci++) {
+        var c = children[ci];
+        if (c && c.nodeType === 1) {
+          if (c !== cur && isThinkingTriggerButton(c)) return true;
+          elemSeen++;
+          if (elemSeen >= 2) break;
+        }
+      }
     }
+    return false;
+  }
 
+  function hasIgnoredClass(cls) {
+    return Boolean(cls && IGNORED_CLASS_RE.test(cls));
+  }
+
+  function shouldIgnoreElement(el, selfOnly) {
+    if (!el || el.nodeType !== 1) return false;
     var bodyNode = doc ? doc.body : null;
     var cur = el;
     while (cur && cur.nodeType === 1 && cur !== bodyNode) {
-      if (cur !== el && (IGNORED_TAGS[cur.tagName] || cur.isContentEditable || isModelSelectorBoundary(cur))) {
+      if (cur.id === 'context-meter-root' || cur.id === 'ag-context-meter') return true;
+      var tag = cur.tagName;
+      if (IGNORED_TAGS[tag] || tag === 'INPUT' || tag === 'TEXTAREA') return true;
+      if (cur.isContentEditable) return true;
+      if (hasProtectedBoundaryAttr(cur) || isModelSelectorBoundary(cur)) return true;
+
+      var cls = typeof cur.className === 'string' ? cur.className : '';
+      if (cls && hasIgnoredClass(cls)) return true;
+
+      var testId = cur.getAttribute ? cur.getAttribute('data-testid') : null;
+      if (testId === 'menu-option-label') {
+        var optionText = String(cur.innerText || cur.textContent || '').trim();
+        return !Object.prototype.hasOwnProperty.call(MENTION_CATEGORY_MAP, optionText);
+      }
+
+      if (tag === 'BUTTON' && testId === 'thinking-collapsible-trigger') {
+        return false;
+      }
+
+      if (isThinkingCollapsibleBodySibling(cur)) {
         return true;
       }
-      if (hasProtectedBoundaryAttr(cur)) {
-        return true;
-      }
-      var curClass = typeof cur.className === 'string' ? cur.className : '';
-      if (curClass) {
-        for (var i = 0; i < IGNORED_CLASSES.length; i++) {
-          if (curClass.indexOf(IGNORED_CLASSES[i]) !== -1) return true;
-        }
-      }
-      // 思考折叠栏展开正文容器（位于 thinking-collapsible-trigger 旁的兄弟容器）绝对跳过
-      if (cur.parentElement && cur.parentElement.querySelector) {
-        try {
-          var trig = cur.parentElement.querySelector(':scope > button[data-testid="thinking-collapsible-trigger"]');
-          if (trig && cur !== trig && !(typeof trig.contains === 'function' && trig.contains(cur))) {
-            return true;
-          }
-        } catch (e) {}
-      }
+
+      if (selfOnly) break;
       cur = cur.parentElement;
     }
     return false;
@@ -423,12 +445,15 @@
     return null;
   }
 
-  function translateTextNode(node) {
+  function translateTextNode(node, skipParentCheck) {
     if (!node || node.nodeType !== 3) return;
-    var parent = node.parentElement || node.parentNode;
-    if (parent && (shouldIgnoreElement(parent) || parent.tagName === 'INPUT' || parent.tagName === 'TEXTAREA')) return;
-
     var original = node.nodeValue;
+    // 优先执行 O(1) 原文/否定缓存命中退出，避免在已处理节点上重复攀爬 DOM 树
+    if (original && node._agyOriginal === original && !node._agyIsBrandNode) return;
+
+    var parent = node.parentElement || node.parentNode;
+    if (!skipParentCheck && parent && (shouldIgnoreElement(parent) || parent.tagName === 'INPUT' || parent.tagName === 'TEXTAREA')) return;
+
     // 如果节点曾被品牌三态 hidden 清空，当品牌切回 english / translated 时利用暂存原文无损恢复
     if ((!original || !original.trim()) && node._agyHiddenOrigBrand) {
       var modeNow = getBrandTitleMode();
@@ -447,9 +472,6 @@
       return;
     }
     if (!original) return;
-
-    // 如果节点已标记原始文本且未变化，直接 O(1) 瞬时退出（品牌节点受三态模式动态影响，不得被此缓存短路）
-    if (node._agyOriginal === original && !node._agyIsBrandNode) return;
 
     var trimmed = original.trim();
     if (!trimmed) {
@@ -536,9 +558,15 @@
     return null;
   }
 
-  function translateElement(el, scanId) {
+  function translateElement(el, scanId, opts) {
     if (!el || el.nodeType !== 1) return;
-    if (shouldIgnoreElement(el)) return;
+    var budget = (opts && typeof opts === 'object') ? opts : null;
+    var selfOnly = Boolean(budget && budget.selfOnly);
+    if (budget && typeof budget.remaining === 'number') {
+      if (budget.remaining <= 0) return;
+      budget.remaining--;
+    }
+    if (shouldIgnoreElement(el, selfOnly)) return;
 
     // 同一轮扫描中，已处理的元素跳过
     if (scanId && el._agyScanId === scanId) return;
@@ -658,11 +686,19 @@
     }
 
     var child = el.firstChild;
+    var childOpts = budget ? { selfOnly: true, remaining: budget.remaining } : { selfOnly: true };
     while (child) {
       if (child.nodeType === 3) {
-        translateTextNode(child);
+        translateTextNode(child, true);
       } else if (child.nodeType === 1) {
-        translateElement(child, scanId);
+        if (budget) {
+          if (budget.remaining <= 0) break;
+          childOpts.remaining = budget.remaining;
+          translateElement(child, scanId, childOpts);
+          budget.remaining = childOpts.remaining;
+        } else {
+          translateElement(child, scanId, childOpts);
+        }
       }
       child = child.nextSibling;
     }
@@ -875,7 +911,7 @@
   function isWorkbenchOrRoot(el) {
     if (!el || el.nodeType !== 1) return true;
     if (doc && (el === doc.body || el === doc.documentElement)) return true;
-    if (el.id === 'workbench') return true;
+    if (el.id === 'workbench' || el.id === 'root' || el.id === 'ag-context-meter' || el.id === 'context-meter-root') return true;
     var cls = typeof el.className === 'string' ? el.className : '';
     if (cls && cls.indexOf('monaco-workbench') !== -1) return true;
     return false;
@@ -919,20 +955,32 @@
 
       function scanFloatingContainers() {
         if (!doc || !doc.body) return;
+        var nowTs = Date.now ? Date.now() : (+new Date());
         disconnectObserver();
         try {
-          // 定向扫描顶层 Portal 容器、Tooltip、Popover 节点，门禁拦截非浮层元素，绝不遍历整棵 DOM 树
+          // 定向扫描顶层 Portal 容器、Tooltip、Popover 节点，带元素级冷却门禁，绝不重复暴扫
           var last = doc.body.lastElementChild;
-          if (last && isFloatingElement(last)) {
-            translateElement(last);
+          if (last && last.id !== 'ag-context-meter' && last.id !== 'context-meter-root' && isFloatingElement(last)) {
+            if (!last._agyFloatTs || (nowTs - last._agyFloatTs) >= 250) {
+              last._agyFloatTs = nowTs;
+              translateElement(last);
+            }
           }
-          if (last && last.previousElementSibling && isFloatingElement(last.previousElementSibling)) {
-            translateElement(last.previousElementSibling);
+          if (last && last.previousElementSibling && last.previousElementSibling.id !== 'ag-context-meter' && last.previousElementSibling.id !== 'context-meter-root' && isFloatingElement(last.previousElementSibling)) {
+            var prevEl = last.previousElementSibling;
+            if (!prevEl._agyFloatTs || (nowTs - prevEl._agyFloatTs) >= 250) {
+              prevEl._agyFloatTs = nowTs;
+              translateElement(prevEl);
+            }
           }
           var tooltips = doc.querySelectorAll ? doc.querySelectorAll('[role="tooltip"], [role="menu"], [role="dialog"], [data-floating-ui-portal], [data-radix-popper-content-wrapper], .popover, .tooltip, .context-view, .monaco-hover') : null;
           if (tooltips && tooltips.length > 0) {
             for (var tIdx = 0; tIdx < tooltips.length; tIdx++) {
-              translateElement(tooltips[tIdx]);
+              var tipEl = tooltips[tIdx];
+              if (!tipEl || tipEl.id === 'ag-context-meter' || tipEl.id === 'context-meter-root') continue;
+              if (tipEl._agyFloatTs && (nowTs - tipEl._agyFloatTs) < 250) continue;
+              tipEl._agyFloatTs = nowTs;
+              translateElement(tipEl, undefined, { remaining: 200 });
             }
           }
         } catch (e) {}
@@ -940,31 +988,40 @@
       }
 
       var onHoverAction = function (e) {
-        // 120ms 节流阀：阻断高频事件风暴，杜绝掉帧卡顿
-        var now = Date.now ? Date.now() : (+new Date());
-        if (now - lastHoverTime < 120) return;
-        lastHoverTime = now;
-
         var target = e.target;
-        if (!target) return;
+        if (!target || target.nodeType !== 1) return;
+        if (isWorkbenchOrRoot(target)) return;
+
+        var now = Date.now ? Date.now() : (+new Date());
+        if (now - lastHoverTime < 150) return;
+
+        // 对非浮层的大结构/深嵌套容器绝不在 pointerenter 捕获期递归，防止多层父容器连锁卡顿
+        var isFloating = isFloatingElement(target);
+        if (!isFloating) {
+          if (typeof target.childElementCount === 'number' && target.childElementCount > 4) {
+            return;
+          }
+          var fc = target.firstElementChild;
+          if (fc && fc.firstElementChild && fc.firstElementChild.firstElementChild) {
+            return;
+          }
+        }
+        if (shouldIgnoreElement(target)) return;
+
         disconnectObserver();
         try {
-          if (target.nodeType === 1) {
-            translateElement(target);
-            // 严禁对 #workbench / body 根容器递归全树深搜，防止剧烈掉帧
-            if (target.parentElement && !isWorkbenchOrRoot(target.parentElement)) {
-              translateElement(target.parentElement);
-            }
-          }
+          translateElement(target, undefined, isFloating ? { remaining: 160 } : { remaining: 16 });
         } catch (e) {}
         reconnectObserver();
 
-        // 防抖延迟定向扫描浮动提示层（捕获动态延迟 50ms 挂载的气泡）
+        lastHoverTime = Date.now ? Date.now() : (+new Date());
+
+        // 防抖延迟定向扫描浮动提示层（捕获动态延迟挂载的气泡）
         if (hoverScanTimer) clearTimeout(hoverScanTimer);
         hoverScanTimer = setTimeout(function () {
           hoverScanTimer = null;
           scanFloatingContainers();
-        }, 50);
+        }, 80);
       };
 
       doc.addEventListener('pointerenter', onHoverAction, { capture: true, passive: true });
