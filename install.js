@@ -36,19 +36,32 @@ function clearAsarCache(archivePath) {
   } catch { }
 }
 
-function extractAsarFile(archivePath, relPath) {
+function extractAsarFile(archivePath, relPath, options) {
   clearAsarCache(archivePath);
   try {
-    return builtinAsar.extractFile(archivePath, relPath);
-  } catch {
-    return asar.extractFile(archivePath, relPath);
+    return builtinAsar.extractFile(archivePath, relPath, options);
+  } catch (err) {
+    if (asar && asar !== builtinAsar) {
+      return asar.extractFile(archivePath, relPath);
+    }
+    throw err;
   }
 }
 
-function extractAllAsar(archivePath, destDir) {
+function extractAllAsar(archivePath, destDir, options) {
   clearAsarCache(archivePath);
+  const hasAltUnpacked = Boolean(
+    !fs.existsSync(archivePath + '.unpacked') && (
+      (options && options.unpackedDir && fs.existsSync(options.unpackedDir)) ||
+      fs.existsSync(path.join(path.dirname(archivePath), 'app.asar.unpacked'))
+    )
+  );
+  if (hasAltUnpacked || asar === builtinAsar) {
+    builtinAsar.extractAll(archivePath, destDir, options);
+    return;
+  }
   try {
-    builtinAsar.extractAll(archivePath, destDir);
+    builtinAsar.extractAll(archivePath, destDir, options);
   } catch {
     asar.extractAll(archivePath, destDir);
   }
@@ -547,14 +560,15 @@ async function install(options = {}) {
     const staging = path.join(os.tmpdir(), `ag-context-meter-pkg-${stamp}`);
     const packed = path.join(os.tmpdir(), `ag-context-meter-${stamp}.asar`);
 
+    const unpackedFallbackOpts = { unpackedDir: installed + '.unpacked' };
     try {
       fs.mkdirSync(staging, { recursive: true });
       clearAsarCache(sourceArchive);
-      extractAllAsar(sourceArchive, staging);
+      extractAllAsar(sourceArchive, staging, unpackedFallbackOpts);
 
       // 先完成底层 utils 与 preload 的全量原位清洗
-      let cleanUtils = cleanUtilsSource(inPlaceCleanedUtils || extractAsarFile(sourceArchive, 'dist/utils.js').toString('utf8'));
-      let cleanPreload = cleanPreloadSource(inPlaceCleanedPreload || extractAsarFile(sourceArchive, 'dist/preload.js').toString('utf8'));
+      let cleanUtils = cleanUtilsSource(inPlaceCleanedUtils || extractAsarFile(sourceArchive, 'dist/utils.js', unpackedFallbackOpts).toString('utf8'));
+      let cleanPreload = cleanPreloadSource(inPlaceCleanedPreload || extractAsarFile(sourceArchive, 'dist/preload.js', unpackedFallbackOpts).toString('utf8'));
 
       if (!verifyCleanStructure(cleanUtils)) {
         throw new Error('清洗后的 utils.js 结构校验未通过 (Unexpected createWindow/setupNodeWrapper) 或 JavaScript 语法自证失败，中止写入以保护宿主环境。');
@@ -726,7 +740,7 @@ async function install(options = {}) {
         if (before.files || before.link) continue;
         if (!!before.unpacked !== !!after.unpacked) throw new Error(`Unpack flag changed: ${name}`);
         const isAllowed = allowedChanges.includes(name) || name.startsWith('dist' + path.sep + 'i18n' + path.sep);
-        if (!isAllowed && sha(asar.extractFile(sourceArchive, name)) !== sha(asar.extractFile(packed, name))) {
+        if (!isAllowed && sha(extractAsarFile(sourceArchive, name, unpackedFallbackOpts)) !== sha(extractAsarFile(packed, name))) {
           throw new Error(`Unexpected file change: ${name}`);
         }
         verified++;

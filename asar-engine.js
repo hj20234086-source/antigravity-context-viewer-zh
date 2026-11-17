@@ -43,13 +43,28 @@ function getNode(header, relPath) {
   return cur;
 }
 
+function resolveUnpackedFile(rawFs, archivePath, relPath, options = {}) {
+  const candidates = [path.join(archivePath + '.unpacked', relPath)];
+  if (options && typeof options.unpackedDir === 'string' && options.unpackedDir.trim()) {
+    candidates.push(path.join(options.unpackedDir.trim(), relPath));
+  }
+  const sameDirAppUnpacked = path.join(path.dirname(archivePath), 'app.asar.unpacked');
+  if (sameDirAppUnpacked !== archivePath + '.unpacked') {
+    candidates.push(path.join(sameDirAppUnpacked, relPath));
+  }
+  for (const candidate of candidates) {
+    if (rawFs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
+}
+
 const builtinAsar = {
-  extractFile(archivePath, relPath) {
+  extractFile(archivePath, relPath, options = {}) {
     const rawFs = getRawFs();
     const { header, baseOffset } = readHeader(archivePath);
     const node = getNode(header, relPath);
     if (node.unpacked) {
-      return rawFs.readFileSync(path.join(archivePath + '.unpacked', relPath));
+      return rawFs.readFileSync(resolveUnpackedFile(rawFs, archivePath, relPath, options));
     }
     const buf = Buffer.alloc(node.size);
     const fd = rawFs.openSync(archivePath, 'r');
@@ -80,7 +95,7 @@ const builtinAsar = {
     return list;
   },
 
-  extractAll(archivePath, destDir) {
+  extractAll(archivePath, destDir, options = {}) {
     const rawFs = getRawFs();
     const { header, baseOffset } = readHeader(archivePath);
     const fd = rawFs.openSync(archivePath, 'r');
@@ -93,7 +108,7 @@ const builtinAsar = {
           if (info.files) {
             walk(info, targetPath, relPath);
           } else if (info.unpacked) {
-            const unpackedSrc = path.join(archivePath + '.unpacked', relPath);
+            const unpackedSrc = resolveUnpackedFile(rawFs, archivePath, relPath, options);
             if (rawFs.existsSync(unpackedSrc)) {
               fs.mkdirSync(path.dirname(targetPath), { recursive: true });
               rawFs.copyFileSync(unpackedSrc, targetPath);
