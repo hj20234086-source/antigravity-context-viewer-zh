@@ -32,7 +32,7 @@ https://github.com/user-attachments/assets/46e3a6f9-5127-4470-a2ef-01525736ec5b
 ## 界面语言
 
 - **插件面板三语言**：面板内置 **简体中文**、**繁體中文**、**English** 即时切换与持久保存，覆盖全部页签、图表、价格账单与系统增强页（`src/renderer/i18n.js`）。
-- **客户端语言与授权说明**：桌面端界面语言支持切换 **简体中文**（内置自主整理的 `i18n/zh-CN.json` 与 `i18n/i18n-runtime.js`）或 **英文原版**。因外部繁体词典仓库 `qqxpee/antigravity2-cn` 未声明开源许可证，本版本未内置客户端繁體词典；繁體中文选项仅作用于插件自身面板。
+- **客户端语言与授权说明**：桌面端界面语言支持切换 **简体中文**（内置 `i18n/zh-CN.json` 与 `i18n/i18n-runtime.js`）或 **英文原版**。本仓库基于上游 `elviscjn-cjn/antigravity-context-viewer`（`v0.8.7`），并依据 MIT 协议从 `antigravity-cn-community/Antigravity-Chinese-Localization`（`v2.32.1`）合入缺失的 `2,193` 条界面词条与 `19` 条动态正则（合共 `5,954` 条词条 / `357` 条正则，主动剔除 `Tab`、`walkthrough.md`、配置枚举键值与高频短小写歧义词），同时补充 `<kbd>/<samp>/<var>`、`[data-testid="menu-option-label"]` 斜杠命令/文件建议、思考折叠正文与用户对话输入区的 DOM 隔离。因外部繁体词典仓库 `qqxpee/antigravity2-cn` 未声明开源许可证，本版本仍未内置客户端繁體词典；繁體中文选项仅作用于插件自身面板。
 
 ---
 
@@ -160,6 +160,8 @@ antigravity-context-viewer/
 
 ## 🤝 社区、贡献署名与支持 (Community & Acknowledgements)
 
+- **上游原项目**：感谢 **[elviscjn-cjn/antigravity-context-viewer](https://github.com/elviscjn-cjn/antigravity-context-viewer)**（`v0.8.7`，MIT License）提供上下文与 Token 看板、模型额度监控、ASAR 原位解构与模块化架构。
+- **客户端 `v2.32.1` 简体中文词库与边界隔离参考**：感谢 **[antigravity-cn-community/Antigravity-Chinese-Localization](https://github.com/antigravity-cn-community/Antigravity-Chinese-Localization)**（`v2.32.1`，MIT License），本分支增补的客户端 UI 词条及 `<kbd>` / 补全菜单 / 思考区隔离规则参考或衍生自该 MIT 开源项目。
 - **[LINUX DO](https://linux.do/)**：本项目支持并认可 LINUX DO 社区，欢迎各位社区佬友交流探讨。
 - **上下文解锁原方案**：感谢 **Linux.do @23375** 公布的上下文长度限制分析与修补思路（<https://linux.do/t/topic/3117832>）。
 - **PR #3（多模式上下文解锁 & agy CLI 工具链）**：感谢 **[@anyu0804](https://github.com/anyu0804)** 贡献 `ORIG / CONST / DYN` 模式、实验覆盖门禁分析、`cli_serializer_max_ctx` 对齐及跨平台 `unlock/` 工具与文档。

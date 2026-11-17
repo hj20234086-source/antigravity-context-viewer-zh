@@ -208,8 +208,31 @@
 
   var IGNORED_TAGS = {
     'SCRIPT': 1, 'STYLE': 1, 'CODE': 1, 'PRE': 1, 'NOSCRIPT': 1,
+    'KBD': 1, 'SAMP': 1, 'VAR': 1,
     'SVG': 1, 'PATH': 1, 'CANVAS': 1,
     'IFRAME': 1, 'VIDEO': 1, 'AUDIO': 1
+  };
+
+  var MENTION_CATEGORY_MAP = {
+    'Rules': 1,
+    '规则': 1,
+    '规则库': 1,
+    'Conversation': 1,
+    '对话': 1,
+    'PDF Document': 1,
+    'PDF 文档': 1,
+    'MCP Resource': 1,
+    'MCP 资源': 1,
+    'Browser Page': 1,
+    '浏览器页面': 1,
+    'Browser Text': 1,
+    '浏览器文本': 1,
+    'Directory': 1,
+    '目录': 1,
+    'Git Commit': 1,
+    'Git 提交': 1,
+    'Git Diff': 1,
+    'Git 差异': 1
   };
 
   var IGNORED_CLASSES = [
@@ -222,7 +245,15 @@
     'token',
     'hljs',
     'code-block',
-    'editor-instance'
+    'editor-instance',
+    'thought-content',
+    'thinking-content',
+    'thought-box',
+    'cursor-edit',
+    'group/user-input-step',
+    'user-message',
+    'input-area',
+    'chat-input'
   ];
 
   var TRANSLATABLE_ATTRS = ['title', 'placeholder', 'aria-label', 'data-tooltip', 'alt', 'aria-description'];
@@ -245,35 +276,71 @@
     return false;
   }
 
+  function hasProtectedBoundaryAttr(elem) {
+    if (!elem || !elem.getAttribute) return false;
+    var role = elem.getAttribute('role');
+    if (role === 'textbox' || role === 'code') return true;
+    if (elem.getAttribute('contenteditable') === 'true') return true;
+    if (elem.getAttribute('data-lexical-editor') === 'true') return true;
+    if (elem.getAttribute('data-language') ||
+        elem.getAttribute('data-code') ||
+        elem.getAttribute('data-line') ||
+        elem.getAttribute('data-line-number')) {
+      return true;
+    }
+    return false;
+  }
+
   function shouldIgnoreElement(el) {
     if (!el || el.nodeType !== 1) return false;
     if (el.id === 'context-meter-root') return true;
-    if (IGNORED_TAGS[el.tagName]) return true;
+    if (IGNORED_TAGS[el.tagName] || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
     if (el.isContentEditable) return true;
     if (el.closest && el.closest('#context-meter-root')) return true;
 
     // 模型选择器相关边界元素及其子元素保持英文原样（纯属性 O(1) 短路）
     if (isModelSelectorBoundary(el)) return true;
 
-    var className = typeof el.className === 'string' ? el.className : '';
-    if (className) {
-      for (var i = 0; i < IGNORED_CLASSES.length; i++) {
-        if (className.indexOf(IGNORED_CLASSES[i]) !== -1) return true;
+    // 保护斜杠命令 (/plan, /review 等) 与 @ 文件/命令建议下拉标签，仅放行 @ 分类白名单
+    var menuOptionLabel = el.closest ? el.closest('[data-testid="menu-option-label"]') : null;
+    if (menuOptionLabel && typeof menuOptionLabel === 'object') {
+      var optionText = String(menuOptionLabel.innerText || menuOptionLabel.textContent || '').trim();
+      if (!Object.prototype.hasOwnProperty.call(MENTION_CATEGORY_MAP, optionText)) {
+        return true;
       }
+      return false;
     }
 
-    // 向上检查最近 3 层祖先，防止子文本/图标元素在受保护区域（如 trigger/item 内部）
-    var ancestor = el.parentElement;
-    for (var depth = 0; ancestor && depth < 3; depth++) {
-      if (IGNORED_TAGS[ancestor.tagName]) return true;
-      if (isModelSelectorBoundary(ancestor)) return true;
-      var ancestorClass = typeof ancestor.className === 'string' ? ancestor.className : '';
-      if (ancestorClass) {
-        for (var ci = 0; ci < IGNORED_CLASSES.length; ci++) {
-          if (ancestorClass.indexOf(IGNORED_CLASSES[ci]) !== -1) return true;
+    // 思考折叠栏标题按钮（如 "Thought for 4s"）允许翻译，避免被外层容器误拦截
+    if (el.closest && el.closest('button[data-testid="thinking-collapsible-trigger"]') && !el.closest('code, pre, kbd, svg, .monaco-editor')) {
+      return false;
+    }
+
+    var bodyNode = doc ? doc.body : null;
+    var cur = el;
+    while (cur && cur.nodeType === 1 && cur !== bodyNode) {
+      if (cur !== el && (IGNORED_TAGS[cur.tagName] || cur.isContentEditable || isModelSelectorBoundary(cur))) {
+        return true;
+      }
+      if (hasProtectedBoundaryAttr(cur)) {
+        return true;
+      }
+      var curClass = typeof cur.className === 'string' ? cur.className : '';
+      if (curClass) {
+        for (var i = 0; i < IGNORED_CLASSES.length; i++) {
+          if (curClass.indexOf(IGNORED_CLASSES[i]) !== -1) return true;
         }
       }
-      ancestor = ancestor.parentElement;
+      // 思考折叠栏展开正文容器（位于 thinking-collapsible-trigger 旁的兄弟容器）绝对跳过
+      if (cur.parentElement && cur.parentElement.querySelector) {
+        try {
+          var trig = cur.parentElement.querySelector(':scope > button[data-testid="thinking-collapsible-trigger"]');
+          if (trig && cur !== trig && !(typeof trig.contains === 'function' && trig.contains(cur))) {
+            return true;
+          }
+        } catch (e) {}
+      }
+      cur = cur.parentElement;
     }
     return false;
   }
